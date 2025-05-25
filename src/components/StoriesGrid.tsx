@@ -53,9 +53,9 @@ const StoriesGrid: React.FC = () => {
 
   const FEATURED_STORIES: Story[] = [
     {
-      name: 'Montpellier',
-      slug: 'montpellier',
-      description: 'Teleport yourself in the medieval Montpellier.',
+      name: 'Crétacé Sup',
+      slug: 'cretace',
+      description: "Découvrez l'univers fascinant des pectinidés!",
     },
   ]
 
