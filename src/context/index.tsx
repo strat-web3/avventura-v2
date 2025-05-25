@@ -51,9 +51,9 @@ createAppKit({
   ],
   defaultNetwork: sepolia,
   metadata: {
-    name: 'Genji',
-    description: 'Next.js + Web3 Modal + Ethers.js + Chakra UI',
-    url: 'https://genji-app.netlify.app',
+    name: 'Avventura',
+    description: 'Join the adventure if you dare!',
+    url: 'https://avventura-v2.netlify.app',
     icons: ['./favicon.ico'],
   },
   enableEIP6963: true,
