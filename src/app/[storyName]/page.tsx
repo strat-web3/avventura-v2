@@ -62,8 +62,8 @@ export default function StoryPage() {
   // Hardcoded placeholder story card
   const story: StoryCard = {
     step: 1,
-    desc: 'Hello',
-    options: ['1', '2', '3'],
+    desc: 'Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello Hello ',
+    options: ['2', '3', '4'],
     paths: [2, 3, 4],
   }
 
@@ -85,13 +85,13 @@ export default function StoryPage() {
       // For now, just simulate a step change
       setCurrentStep(choice)
 
-      toast({
-        title: t.common.success,
-        description: `You chose option ${choice}`,
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
-      })
+      // toast({
+      //   title: t.common.success,
+      //   description: `You chose option ${choice}`,
+      //   status: 'success',
+      //   duration: 3000,
+      //   isClosable: true,
+      // })
 
       // Reset the typing effect for the next step
       setTimeout(() => {
