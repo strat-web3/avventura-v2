@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { Container, Text, Button, useToast, Box, VStack, Flex, Spinner } from '@chakra-ui/react'
+import { Container, Text, Button, useToast, Box, VStack, Flex } from '@chakra-ui/react'
 import { useAppKitAccount, useAppKitNetwork, useAppKitProvider } from '@reown/appkit/react'
 import { BrowserProvider, parseEther, formatEther } from 'ethers'
 import Link from 'next/link'
@@ -55,6 +55,21 @@ const TypingEffect: React.FC<TypingEffectProps> = ({ text, speed = 20, onComplet
   }, [text, speed, onComplete])
 
   return <TypingText>{displayedText}</TypingText>
+}
+
+// Custom Loader Component using the existing SVG
+const CustomLoader: React.FC<{ size?: number }> = ({ size = 60 }) => {
+  return (
+    <Box
+      display="flex"
+      justifyContent="center"
+      alignItems="center"
+      width={`${size}px`}
+      height={`${size}px`}
+    >
+      <Box as="img" src="/loader.svg" alt="Loading..." width={`${size}px`} height={`${size}px`} />
+    </Box>
+  )
 }
 
 // Generate a unique session ID
@@ -312,7 +327,7 @@ export default function StoryPage() {
           align="center"
         >
           <VStack spacing={4}>
-            <Spinner size="xl" color="#8c1c84" />
+            <CustomLoader size={80} />
             <Text>Chargement de l&apos;aventure...</Text>
           </VStack>
         </Flex>
@@ -350,22 +365,22 @@ export default function StoryPage() {
         {/* Back button */}
         <Box position="absolute" top={4} left={4} zIndex={10}>
           <Link href="/">
-            <Button variant="ghost" size="sm">
+            {/* <Button variant="ghost" size="sm">
               ← Retour
-            </Button>
+            </Button> */}
           </Link>
         </Box>
 
         {/* Reset button with loading indicator */}
         <Box position="absolute" top={4} right={4} zIndex={10}>
-          <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
+          {/* <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
             Recommencer
           </Button>
           {isLoadingBackground && (
             <Box position="absolute" top={-1} right={-1}>
-              <Spinner size="xs" color="#8c1c84" />
+              <CustomLoader size={16} />
             </Box>
-          )}
+          )} */}
         </Box>
 
         <VStack spacing={4} flex={1} width="100%">
@@ -378,63 +393,45 @@ export default function StoryPage() {
           {showOptions && !isLoading && (
             <>
               <VStack spacing={4} width="100%">
-                {currentStep.options.map((option, index) => (
-                  <Box
-                    key={index}
-                    width="100%"
-                    borderRadius="lg"
-                    p={4}
-                    borderWidth="2px"
-                    borderColor="gray.600"
-                    onClick={() => nextStep(index + 1)}
-                    cursor="pointer"
-                    _hover={{
-                      borderColor: '#8c1c84',
-                      boxShadow: 'md',
-                    }}
-                    transition="all 0.2s"
-                    bg="gray.800"
-                    position="relative"
-                  >
-                    <Text
-                      fontSize="lg"
-                      fontWeight="medium"
-                      color="#45a2f8"
-                      _hover={{ color: '#45a2f8' }}
-                    >
-                      {option}
-                    </Text>
-                    {/* Indicator if this option has a pre-loaded next step */}
-                    {nextSteps && nextSteps.length >= index + 1 && (
-                      <Box
-                        position="absolute"
-                        top={2}
-                        right={2}
-                        width={2}
-                        height={2}
-                        borderRadius="full"
-                        bg="green.400"
-                        opacity={0.7}
-                      />
-                    )}
-                  </Box>
-                ))}
-              </VStack>
+                {currentStep.options.map((option, index) => {
+                  const isOptionAvailable = nextSteps && nextSteps.length >= index + 1
 
-              {/* Background loading indicator */}
-              {isLoadingBackground && (
-                <Box width="100%" textAlign="center" py={2}>
-                  <Text fontSize="sm" color="gray.400">
-                    Préparation des prochaines étapes...
-                  </Text>
-                </Box>
-              )}
+                  return (
+                    <Box
+                      key={index}
+                      width="100%"
+                      borderRadius="lg"
+                      p={4}
+                      borderWidth="2px"
+                      borderColor="gray.600"
+                      onClick={isOptionAvailable ? () => nextStep(index + 1) : undefined}
+                      cursor="pointer"
+                      _hover={{
+                        borderColor: '#8c1c84',
+                        boxShadow: 'md',
+                      }}
+                      transition="all 0.2s"
+                      bg="gray.800"
+                      position="relative"
+                    >
+                      <Text
+                        fontSize="lg"
+                        fontWeight="medium"
+                        color="#45a2f8"
+                        _hover={{ color: '#45a2f8' }}
+                      >
+                        {option}
+                      </Text>
+                    </Box>
+                  )
+                })}
+              </VStack>
             </>
           )}
 
           {isLoading && showOptions && (
             <Flex justify="center" align="center" width="100%" py={8}>
-              <Spinner size="lg" color="#8c1c84" />
+              <CustomLoader size={60} />
             </Flex>
           )}
         </VStack>
