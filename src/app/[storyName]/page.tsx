@@ -35,7 +35,7 @@ interface TypingEffectProps {
   onComplete: () => void
 }
 
-const TypingEffect: React.FC<TypingEffectProps> = ({ text, speed = 20, onComplete }) => {
+const TypingEffect: React.FC<TypingEffectProps> = ({ text, speed = 10, onComplete }) => {
   const [displayedText, setDisplayedText] = useState('')
 
   useEffect(() => {
