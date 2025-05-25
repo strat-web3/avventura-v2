@@ -17,7 +17,8 @@ interface StoryStep {
 
 interface StoryResponse {
   sessionId: string
-  step: StoryStep
+  currentStep: StoryStep
+  nextSteps: StoryStep[]
   success: boolean
   error?: string
 }
@@ -65,8 +66,10 @@ export default function StoryPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showOptions, setShowOptions] = useState(false)
   const [currentStep, setCurrentStep] = useState<StoryStep | null>(null)
+  const [nextSteps, setNextSteps] = useState<StoryStep[]>([])
   const [sessionId, setSessionId] = useState<string>('')
   const [isInitialized, setIsInitialized] = useState(false)
+  const [isLoadingBackground, setIsLoadingBackground] = useState(false)
 
   const { address, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider('eip155')
@@ -113,8 +116,9 @@ export default function StoryPage() {
 
         const data: StoryResponse = await response.json()
 
-        if (data.success && data.step) {
-          setCurrentStep(data.step)
+        if (data.success && data.currentStep) {
+          setCurrentStep(data.currentStep)
+          setNextSteps(data.nextSteps || [])
         } else {
           throw new Error(data.error || 'Failed to generate story content')
         }
@@ -145,11 +149,94 @@ export default function StoryPage() {
   }, [])
 
   const nextStep = async (choice: number) => {
-    console.log('next step:', choice)
-    setIsLoading(true)
+    console.log('=== NEXT STEP CALLED ===')
+    console.log('Choice:', choice)
+    console.log('Current nextSteps array length:', nextSteps.length)
+    console.log('Available pre-loaded steps:', nextSteps.length >= choice)
+
     setShowOptions(false)
 
+    // Use the pre-loaded next step for immediate display
+    if (nextSteps && nextSteps.length >= choice) {
+      console.log('Using pre-loaded step for choice:', choice)
+      const immediateStep = nextSteps[choice - 1]
+
+      // Safety check for step structure
+      if (!immediateStep || !immediateStep.desc || !immediateStep.options) {
+        console.error('Invalid pre-loaded step structure:', immediateStep)
+        // Fall back to immediate API call
+        setIsLoading(true)
+        // Continue to the immediate API call section below
+      } else {
+        console.log('Immediate step:', {
+          desc: immediateStep.desc.substring(0, 100) + '...',
+          optionsCount: immediateStep.options.length,
+        })
+
+        setCurrentStep(immediateStep)
+
+        // Clear next steps since we're using them
+        setNextSteps([])
+
+        // Start background loading for the next set of steps
+        setIsLoadingBackground(true)
+        console.log('Starting background API call...')
+
+        try {
+          // Make background API request for future steps
+          const response = await fetch('/api/story', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              sessionId,
+              choice,
+              storyName,
+              language: 'fr',
+            }),
+          })
+
+          console.log('Background API response status:', response.status)
+
+          if (response.ok) {
+            const data: StoryResponse = await response.json()
+            console.log('Background API response:', {
+              success: data.success,
+              hasCurrentStep: !!data.currentStep,
+              nextStepsCount: data.nextSteps?.length || 0,
+              error: data.error,
+            })
+
+            if (data.success && data.nextSteps) {
+              // Store the new next steps for future use
+              console.log('Storing', data.nextSteps.length, 'new next steps')
+              setNextSteps(data.nextSteps)
+            } else {
+              console.warn('Background API did not return next steps:', data)
+            }
+          } else {
+            const errorText = await response.text()
+            console.warn('Background loading failed with status:', response.status, errorText)
+          }
+        } catch (error) {
+          console.warn('Background loading error:', error)
+          // Continue with the immediate step even if background loading fails
+        } finally {
+          console.log('Background loading completed')
+          setIsLoadingBackground(false)
+        }
+
+        return // Exit early since we handled the pre-loaded step
+      }
+    }
+
+    // Fallback: no pre-loaded steps, do immediate API call
+    console.log('No pre-loaded steps available or invalid structure, making immediate API call')
+    if (!isLoading) setIsLoading(true)
+
     try {
+      console.log('Making immediate API request with choice:', choice)
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: {
@@ -163,21 +250,32 @@ export default function StoryPage() {
         }),
       })
 
+      console.log('Immediate API response status:', response.status)
+
       if (!response.ok) {
+        const errorText = await response.text()
+        console.error('Immediate API failed:', response.status, errorText)
         throw new Error('Failed to get next step')
       }
 
       const data: StoryResponse = await response.json()
+      console.log('Immediate API response data:', {
+        success: data.success,
+        hasCurrentStep: !!data.currentStep,
+        nextStepsCount: data.nextSteps?.length || 0,
+        error: data.error,
+      })
 
-      if (data.success && data.step) {
-        setCurrentStep(data.step)
-        // Reset options display for new content
-        setShowOptions(false)
+      if (data.success && data.currentStep) {
+        console.log('Setting current step from immediate API')
+        setCurrentStep(data.currentStep)
+        setNextSteps(data.nextSteps || [])
       } else {
+        console.error('Immediate API did not return valid data:', data)
         throw new Error(data.error || 'Failed to generate next step')
       }
     } catch (error) {
-      console.error('Error advancing to next step:', error)
+      console.error('Error in immediate API call:', error)
       toast({
         title: t.common.error,
         description: "Une erreur est survenue lors de la progression de l'histoire",
@@ -186,6 +284,7 @@ export default function StoryPage() {
         isClosable: true,
       })
     } finally {
+      console.log('Immediate API call completed')
       setIsLoading(false)
     }
   }
@@ -196,8 +295,10 @@ export default function StoryPage() {
     localStorage.removeItem(storageKey)
     setSessionId('')
     setCurrentStep(null)
+    setNextSteps([])
     setShowOptions(false)
     setIsInitialized(false)
+    setIsLoadingBackground(false)
   }
 
   if (!isInitialized || isLoading) {
@@ -255,11 +356,16 @@ export default function StoryPage() {
           </Link>
         </Box>
 
-        {/* Reset button */}
+        {/* Reset button with loading indicator */}
         <Box position="absolute" top={4} right={4} zIndex={10}>
-          <Button variant="ghost" size="sm" onClick={resetStory}>
+          <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
             Recommencer
           </Button>
+          {isLoadingBackground && (
+            <Box position="absolute" top={-1} right={-1}>
+              <Spinner size="xs" color="#8c1c84" />
+            </Box>
+          )}
         </Box>
 
         <VStack spacing={4} flex={1} width="100%">
@@ -270,35 +376,60 @@ export default function StoryPage() {
           </Box>
 
           {showOptions && !isLoading && (
-            <VStack spacing={4} width="100%">
-              {currentStep.options.map((option, index) => (
-                <Box
-                  key={index}
-                  width="100%"
-                  borderRadius="lg"
-                  p={4}
-                  borderWidth="2px"
-                  borderColor="gray.600"
-                  onClick={() => nextStep(index + 1)}
-                  cursor="pointer"
-                  _hover={{
-                    borderColor: '#8c1c84',
-                    boxShadow: 'md',
-                  }}
-                  transition="all 0.2s"
-                  bg="gray.800"
-                >
-                  <Text
-                    fontSize="lg"
-                    fontWeight="medium"
-                    color="#45a2f8"
-                    _hover={{ color: '#45a2f8' }}
+            <>
+              <VStack spacing={4} width="100%">
+                {currentStep.options.map((option, index) => (
+                  <Box
+                    key={index}
+                    width="100%"
+                    borderRadius="lg"
+                    p={4}
+                    borderWidth="2px"
+                    borderColor="gray.600"
+                    onClick={() => nextStep(index + 1)}
+                    cursor="pointer"
+                    _hover={{
+                      borderColor: '#8c1c84',
+                      boxShadow: 'md',
+                    }}
+                    transition="all 0.2s"
+                    bg="gray.800"
+                    position="relative"
                   >
-                    {option}
+                    <Text
+                      fontSize="lg"
+                      fontWeight="medium"
+                      color="#45a2f8"
+                      _hover={{ color: '#45a2f8' }}
+                    >
+                      {option}
+                    </Text>
+                    {/* Indicator if this option has a pre-loaded next step */}
+                    {nextSteps && nextSteps.length >= index + 1 && (
+                      <Box
+                        position="absolute"
+                        top={2}
+                        right={2}
+                        width={2}
+                        height={2}
+                        borderRadius="full"
+                        bg="green.400"
+                        opacity={0.7}
+                      />
+                    )}
+                  </Box>
+                ))}
+              </VStack>
+
+              {/* Background loading indicator */}
+              {isLoadingBackground && (
+                <Box width="100%" textAlign="center" py={2}>
+                  <Text fontSize="sm" color="gray.400">
+                    Préparation des prochaines étapes...
                   </Text>
                 </Box>
-              ))}
-            </VStack>
+              )}
+            </>
           )}
 
           {isLoading && showOptions && (
