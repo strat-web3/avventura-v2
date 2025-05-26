@@ -93,7 +93,7 @@ export default function StoryPage() {
   const params = useParams()
   const storyName = params.storyName as string
 
-  // Initialize session and load first step
+  // Simplified initialization - API handles deduplication
   useEffect(() => {
     const initializeStory = async () => {
       if (isInitialized) return
@@ -121,7 +121,7 @@ export default function StoryPage() {
           body: JSON.stringify({
             sessionId: storedSessionId,
             storyName,
-            language: 'fr',
+            language: 'Français', // Changed from 'fr' to 'Français'
           }),
         })
 
@@ -156,49 +156,30 @@ export default function StoryPage() {
   }, [storyName, isInitialized, toast, t.common.error])
 
   const handleTypingComplete = useCallback(() => {
-    console.log('Typing complete, setting timeout for options')
     setTimeout(() => {
-      console.log('Timeout complete, showing options')
       setShowOptions(true)
-    }, 500) // Delay before showing options
+    }, 500)
   }, [])
 
   const nextStep = async (choice: number) => {
-    console.log('=== NEXT STEP CALLED ===')
-    console.log('Choice:', choice)
-    console.log('Current nextSteps array length:', nextSteps.length)
-    console.log('Available pre-loaded steps:', nextSteps.length >= choice)
-
     setShowOptions(false)
 
     // Use the pre-loaded next step for immediate display
     if (nextSteps && nextSteps.length >= choice) {
-      console.log('Using pre-loaded step for choice:', choice)
       const immediateStep = nextSteps[choice - 1]
 
       // Safety check for step structure
       if (!immediateStep || !immediateStep.desc || !immediateStep.options) {
         console.error('Invalid pre-loaded step structure:', immediateStep)
-        // Fall back to immediate API call
         setIsLoading(true)
-        // Continue to the immediate API call section below
       } else {
-        console.log('Immediate step:', {
-          desc: immediateStep.desc.substring(0, 100) + '...',
-          optionsCount: immediateStep.options.length,
-        })
-
         setCurrentStep(immediateStep)
-
-        // Clear next steps since we're using them
         setNextSteps([])
 
         // Start background loading for the next set of steps
         setIsLoadingBackground(true)
-        console.log('Starting background API call...')
 
         try {
-          // Make background API request for future steps
           const response = await fetch('/api/story', {
             method: 'POST',
             headers: {
@@ -208,50 +189,30 @@ export default function StoryPage() {
               sessionId,
               choice,
               storyName,
-              language: 'fr',
+              language: 'Français',
             }),
           })
 
-          console.log('Background API response status:', response.status)
-
           if (response.ok) {
             const data: StoryResponse = await response.json()
-            console.log('Background API response:', {
-              success: data.success,
-              hasCurrentStep: !!data.currentStep,
-              nextStepsCount: data.nextSteps?.length || 0,
-              error: data.error,
-            })
-
             if (data.success && data.nextSteps) {
-              // Store the new next steps for future use
-              console.log('Storing', data.nextSteps.length, 'new next steps')
               setNextSteps(data.nextSteps)
-            } else {
-              console.warn('Background API did not return next steps:', data)
             }
-          } else {
-            const errorText = await response.text()
-            console.warn('Background loading failed with status:', response.status, errorText)
           }
         } catch (error) {
           console.warn('Background loading error:', error)
-          // Continue with the immediate step even if background loading fails
         } finally {
-          console.log('Background loading completed')
           setIsLoadingBackground(false)
         }
 
-        return // Exit early since we handled the pre-loaded step
+        return
       }
     }
 
     // Fallback: no pre-loaded steps, do immediate API call
-    console.log('No pre-loaded steps available or invalid structure, making immediate API call')
     if (!isLoading) setIsLoading(true)
 
     try {
-      console.log('Making immediate API request with choice:', choice)
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: {
@@ -261,36 +222,24 @@ export default function StoryPage() {
           sessionId,
           choice,
           storyName,
-          language: 'fr',
+          language: 'Français',
         }),
       })
 
-      console.log('Immediate API response status:', response.status)
-
       if (!response.ok) {
-        const errorText = await response.text()
-        console.error('Immediate API failed:', response.status, errorText)
         throw new Error('Failed to get next step')
       }
 
       const data: StoryResponse = await response.json()
-      console.log('Immediate API response data:', {
-        success: data.success,
-        hasCurrentStep: !!data.currentStep,
-        nextStepsCount: data.nextSteps?.length || 0,
-        error: data.error,
-      })
 
       if (data.success && data.currentStep) {
-        console.log('Setting current step from immediate API')
         setCurrentStep(data.currentStep)
         setNextSteps(data.nextSteps || [])
       } else {
-        console.error('Immediate API did not return valid data:', data)
         throw new Error(data.error || 'Failed to generate next step')
       }
     } catch (error) {
-      console.error('Error in immediate API call:', error)
+      console.error('Error in API call:', error)
       toast({
         title: t.common.error,
         description: "Une erreur est survenue lors de la progression de l'histoire",
@@ -299,13 +248,11 @@ export default function StoryPage() {
         isClosable: true,
       })
     } finally {
-      console.log('Immediate API call completed')
       setIsLoading(false)
     }
   }
 
   const resetStory = () => {
-    // Clear session and restart
     const storageKey = `avventura_session_${storyName}`
     localStorage.removeItem(storageKey)
     setSessionId('')
@@ -327,8 +274,8 @@ export default function StoryPage() {
           align="center"
         >
           <VStack spacing={4}>
-            <CustomLoader size={80} />
-            <Text>Chargement de l&apos;aventure...</Text>
+            <CustomLoader size={200} />
+            {/* <Text>Chargement de l&apos;aventure...</Text> */}
           </VStack>
         </Flex>
       </Container>
@@ -345,15 +292,15 @@ export default function StoryPage() {
           justify="center"
           align="center"
         >
-          <VStack spacing={4}>
-            {/* <Text>Erreur lors du chargement de l&apos;histoire</Text>
+          {/* <VStack spacing={4}>
+            <Text>Erreur lors du chargement de l&apos;histoire</Text>
             <Button onClick={resetStory} colorScheme="blue">
               Recommencer
             </Button>
             <Link href="/">
               <Button variant="outline">Retour à l&apos;accueil</Button>
-            </Link> */}
-          </VStack>
+            </Link>
+          </VStack> */}
         </Flex>
       </Container>
     )
@@ -363,25 +310,25 @@ export default function StoryPage() {
     <Container maxW="container.sm" py={0} px={4}>
       <Flex flexDirection="column" height="calc(100vh - 72px)" width="100%">
         {/* Back button */}
-        <Box position="absolute" top={4} left={4} zIndex={10}>
+        {/* <Box position="absolute" top={4} left={4} zIndex={10}>
           <Link href="/">
-            {/* <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm">
               ← Retour
-            </Button> */}
+            </Button>
           </Link>
-        </Box>
+        </Box> */}
 
         {/* Reset button with loading indicator */}
-        <Box position="absolute" top={4} right={4} zIndex={10}>
-          {/* <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
+        {/* <Box position="absolute" top={4} right={4} zIndex={10}>
+          <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
             Recommencer
           </Button>
           {isLoadingBackground && (
             <Box position="absolute" top={-1} right={-1}>
               <CustomLoader size={16} />
             </Box>
-          )} */}
-        </Box>
+          )}
+        </Box> */}
 
         <VStack spacing={4} flex={1} width="100%">
           <Box width="100%" maxHeight="180px" overflowY="auto" marginBottom={4} marginTop={10}>
