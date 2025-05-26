@@ -121,7 +121,7 @@ export default function StoryPage() {
           body: JSON.stringify({
             sessionId: storedSessionId,
             storyName,
-            language: 'fr',
+            language: 'Français', // Changed from 'fr' to 'Français'
           }),
         })
 
@@ -189,7 +189,7 @@ export default function StoryPage() {
               sessionId,
               choice,
               storyName,
-              language: 'fr',
+              language: 'Français',
             }),
           })
 
@@ -222,7 +222,7 @@ export default function StoryPage() {
           sessionId,
           choice,
           storyName,
-          language: 'fr',
+          language: 'Français',
         }),
       })
 

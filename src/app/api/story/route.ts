@@ -52,31 +52,24 @@ async function processStoryRequest(body: StoryRequest): Promise<any> {
       // Fallback generic content
       prompt = `Create the first step of an interactive adventure story named "${storyName}" in ${language}.
 
-MANDATORY: Return ONLY a JSON array with exactly 4 objects, each having this structure:
-{
-  "desc": "Description text in ${language}",
-  "options": ["Option 1", "Option 2", "Option 3"]
-}
+CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
 
-The first object = the initial situation
-The next 3 objects = possible future steps
+Format: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]
 
 Requirements:
 - Educational and engaging content appropriate for children
 - Scientifically accurate if applicable
 - Include a friendly guide character
 - Each option should lead to different story branches
-- Return ONLY the JSON array, no other text.`
+- Return ONLY the raw JSON array, absolutely no markdown formatting.`
     }
   } else {
     // Continuation - user made a choice
     prompt = `Continue the "${storyName}" adventure story in ${language}. The user chose option ${choice}.
 
-MANDATORY: Return ONLY a JSON array with exactly 4 objects having this structure:
-{
-  "desc": "Description text in ${language}", 
-  "options": ["Option 1", "Option 2", "Option 3"]
-}
+CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
+
+Format: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]
 
 The first object = immediate result of choice ${choice}
 The next 3 objects = possible future steps
@@ -86,7 +79,7 @@ Requirements:
 - Educational content appropriate for children
 - Include character interactions
 - Each description should advance the story
-- Return ONLY the JSON array, no other text.`
+- Return ONLY the raw JSON array, absolutely no markdown formatting.`
   }
 
   // Make request to Anthropic API
@@ -125,12 +118,23 @@ Requirements:
   const content = data.content[0].text
 
   try {
+    // Clean the response - remove markdown code blocks if present
+    let cleanedContent = content.trim()
+
+    // Remove ```json and ``` if present
+    if (cleanedContent.startsWith('```json')) {
+      cleanedContent = cleanedContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+    } else if (cleanedContent.startsWith('```')) {
+      cleanedContent = cleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+    }
+
     // Parse the JSON response from Claude
-    const storySteps: any[] = JSON.parse(content)
+    const storySteps: any[] = JSON.parse(cleanedContent.trim())
 
     // Validate the response format
     if (!Array.isArray(storySteps) || storySteps.length !== 4) {
       console.error('❌ Invalid response format - expected 4 steps, got:', storySteps.length)
+      console.error('📝 Raw content received:', content.substring(0, 200) + '...')
       throw new Error('Invalid response format from AI')
     }
 
@@ -193,6 +197,16 @@ Requirements:
       '❌ Failed to parse AI response:',
       parseError instanceof Error ? parseError.message : parseError
     )
+    console.error('📝 Raw content that failed to parse:', content.substring(0, 500))
+
+    // Try to show cleaned content if it exists in this scope
+    let debugCleanedContent = content.trim()
+    if (debugCleanedContent.startsWith('```json')) {
+      debugCleanedContent = debugCleanedContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
+    } else if (debugCleanedContent.startsWith('```')) {
+      debugCleanedContent = debugCleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+    }
+    console.error('🧹 Cleaned content that failed to parse:', debugCleanedContent.substring(0, 500))
 
     // Return a fallback response based on language
     const fallbackDesc =
