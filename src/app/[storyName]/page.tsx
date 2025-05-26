@@ -274,8 +274,8 @@ export default function StoryPage() {
           align="center"
         >
           <VStack spacing={4}>
-            <CustomLoader size={80} />
-            <Text>Chargement de l&apos;aventure...</Text>
+            <CustomLoader size={200} />
+            {/* <Text>Chargement de l&apos;aventure...</Text> */}
           </VStack>
         </Flex>
       </Container>
