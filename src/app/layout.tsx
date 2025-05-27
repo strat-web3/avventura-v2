@@ -21,13 +21,7 @@ export default function RootLayout({
   // Check if we're on a story page (matches /[storyName] pattern)
   // We exclude the root path and other known routes
   const isStoryPage =
-    pathname !== '/' &&
-    !pathname.startsWith('/api') &&
-    !pathname.startsWith('/new') &&
-    !pathname.startsWith('/wallet') &&
-    !pathname.startsWith('/referral') &&
-    !pathname.startsWith('/subscribe') &&
-    pathname.split('/').length === 2 // Single level path like /montpellier
+    pathname !== '/' && !pathname.startsWith('/api') && pathname.split('/').length === 2 // Single level path like /montpellier
 
   return (
     <html lang="en">
@@ -35,7 +29,7 @@ export default function RootLayout({
         <ContextProvider>
           <LanguageProvider>
             {!isStoryPage && <Header />}
-            <Box pt={'72px'}>{children}</Box>
+            <Box>{children}</Box>
           </LanguageProvider>
         </ContextProvider>
       </body>

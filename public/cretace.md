@@ -33,7 +33,7 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 - Respond ONLY with the JSON, no other text
 - Always exactly 4 objects in the array
 - Each object must have "desc" and "options" with 3 choices
-- Respond in the language used by user in the first prompt
+- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
 - Keep in memory the choices of users: make it so the story don't repeat itself
 - There must be surprises. Be as creative as you can, but keep the scientific correctness
 - The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
