@@ -162,17 +162,25 @@ export default function StoryPage() {
   }, [])
 
   const nextStep = async (choice: number) => {
+    console.log('nextStep called with choice:', choice)
+    console.log('Current nextSteps:', nextSteps)
+    console.log('NextSteps length:', nextSteps?.length)
+
     setShowOptions(false)
 
     // Use the pre-loaded next step for immediate display
     if (nextSteps && nextSteps.length >= choice) {
       const immediateStep = nextSteps[choice - 1]
+      console.log('Pre-loaded step found:', immediateStep)
 
-      // Safety check for step structure
+      // Safety check for step structure - if invalid, fall back to API call
       if (!immediateStep || !immediateStep.desc || !immediateStep.options) {
         console.error('Invalid pre-loaded step structure:', immediateStep)
-        setIsLoading(true)
+        console.log('Falling back to API call...')
+        // Don't return here, fall through to the API call below
       } else {
+        // Valid pre-loaded step, use it immediately
+        console.log('Using valid pre-loaded step')
         setCurrentStep(immediateStep)
         setNextSteps([])
 
@@ -180,6 +188,7 @@ export default function StoryPage() {
         setIsLoadingBackground(true)
 
         try {
+          console.log('Starting background API call...')
           const response = await fetch('/api/story', {
             method: 'POST',
             headers: {
@@ -193,10 +202,14 @@ export default function StoryPage() {
             }),
           })
 
+          console.log('Background API response status:', response.status)
+
           if (response.ok) {
             const data: StoryResponse = await response.json()
+            console.log('Background API data:', data)
             if (data.success && data.nextSteps) {
               setNextSteps(data.nextSteps)
+              console.log('Background next steps loaded:', data.nextSteps.length)
             }
           }
         } catch (error) {
@@ -205,14 +218,16 @@ export default function StoryPage() {
           setIsLoadingBackground(false)
         }
 
-        return
+        return // Only return here if we successfully used pre-loaded step
       }
     }
 
-    // Fallback: no pre-loaded steps, do immediate API call
-    if (!isLoading) setIsLoading(true)
+    // Fallback: no pre-loaded steps or invalid steps, do immediate API call
+    console.log('Using fallback API call')
+    setIsLoading(true)
 
     try {
+      console.log('Making fallback API call...')
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: {
@@ -226,23 +241,33 @@ export default function StoryPage() {
         }),
       })
 
+      console.log('Fallback API response status:', response.status)
+
       if (!response.ok) {
-        throw new Error('Failed to get next step')
+        throw new Error(`Failed to get next step: ${response.status}`)
       }
 
       const data: StoryResponse = await response.json()
+      console.log('Fallback API data:', data)
 
       if (data.success && data.currentStep) {
         setCurrentStep(data.currentStep)
         setNextSteps(data.nextSteps || [])
+        console.log('Fallback step set successfully')
       } else {
         throw new Error(data.error || 'Failed to generate next step')
       }
     } catch (error) {
-      console.error('Error in API call:', error)
+      console.error('Error in fallback API call:', error)
+
+      // Re-show options if API call fails to prevent being stuck
+      setShowOptions(true)
+      console.log('Re-showing options due to error')
+
       toast({
         title: t.common.error,
-        description: "Une erreur est survenue lors de la progression de l'histoire",
+        description:
+          "Une erreur est survenue lors de la progression de l'histoire. Options restaurées.",
         status: 'error',
         duration: 5000,
         isClosable: true,
