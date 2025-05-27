@@ -57,6 +57,16 @@ const StoriesGrid: React.FC = () => {
       slug: 'cretace',
       description: "Découvrez l'univers fascinant des pectinidés!",
     },
+    {
+      name: 'Montpellier Medieval',
+      slug: 'montpellier',
+      description: 'Explorez la vie médiévale à Montpellier au 10ème siècle!',
+    },
+    {
+      name: 'The Truman Show',
+      slug: 'truman',
+      description: 'Experience the real world for the first time after a lifetime in a TV show!',
+    },
   ]
 
   const handleStorySelect = (storySlug: string): void => {
@@ -65,7 +75,7 @@ const StoriesGrid: React.FC = () => {
 
   return (
     <VStack spacing={8} align="stretch">
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)' }} gap={6}>
+      <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }} gap={6}>
         {FEATURED_STORIES.map(story => (
           <StoryBox key={story.slug} story={story} onClick={handleStorySelect} />
         ))}
