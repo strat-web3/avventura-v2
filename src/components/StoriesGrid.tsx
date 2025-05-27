@@ -67,6 +67,11 @@ const StoriesGrid: React.FC = () => {
       slug: 'truman',
       description: 'Experience the real world for the first time after a lifetime in a TV show!',
     },
+    {
+      name: 'In Kingston Town',
+      slug: 'kingston',
+      description: "You step off the plane at Kingston's Palisadoes Airport, 1957",
+    },
   ]
 
   const handleStorySelect = (storySlug: string): void => {
