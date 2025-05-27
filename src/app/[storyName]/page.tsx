@@ -331,7 +331,7 @@ export default function StoryPage() {
         </Box> */}
 
         <VStack spacing={4} flex={1} width="100%">
-          <Box width="100%" maxHeight="180px" overflowY="auto" marginBottom={4} marginTop={10}>
+          <Box width="100%" overflowY="auto" marginBottom={4} marginTop={10}>
             <Text as="h4" fontSize="xl" fontWeight="medium" lineHeight="1.6">
               <TypingEffect text={currentStep.desc} onComplete={handleTypingComplete} />
             </Text>
