@@ -20,6 +20,9 @@ interface StoryResponse {
   nextSteps: StoryStep[]
 }
 
+// Store conversation history per session
+const conversationHistory = new Map<string, any[]>()
+
 // Request deduplication map - stores active requests and their results
 const activeRequests = new Map<string, Promise<any>>()
 const cachedResponses = new Map<string, any>()
@@ -38,51 +41,62 @@ async function processStoryRequest(body: StoryRequest): Promise<any> {
     throw new Error('Anthropic API key not configured')
   }
 
+  // Get or initialize conversation history for this session
+  let messages = conversationHistory.get(sessionId) || []
+
   let prompt = ''
 
   if (choice === undefined) {
-    // First step - try to load story-specific instructions
+    // First step - use the instruction file as-is and start conversation
     try {
       const filePath = join(process.cwd(), 'public', `${storyName}.md`)
       const fileContent = await readFile(filePath, 'utf-8')
-      prompt = fileContent
+      prompt = fileContent // Just use the instruction file directly
       console.log(`📋 Loaded story instructions for: ${storyName}`)
+
+      // Initialize conversation history
+      messages = [
+        {
+          role: 'user',
+          content: fileContent,
+        },
+      ]
     } catch (fileError) {
-      console.log(`⚠️ No instructions file found for ${storyName}, using generic prompt`)
-      // Fallback generic content
-      prompt = `Create the first step of an interactive adventure story named "${storyName}" in ${language}.
+      console.log(`⚠️ No instructions file found for ${storyName}`)
+      // Only use fallback if no instruction file exists
+      prompt = `Create a simple interactive story named "${storyName}" in ${language}. Return only JSON array with 4 objects: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`
 
-CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
-
-Format: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]
-
-Requirements:
-- Educational and engaging content appropriate for children
-- Scientifically accurate if applicable
-- Include a friendly guide character
-- Each option should lead to different story branches
-- Return ONLY the raw JSON array, absolutely no markdown formatting.`
+      messages = [
+        {
+          role: 'user',
+          content: prompt,
+        },
+      ]
     }
   } else {
-    // Continuation - user made a choice
-    prompt = `Continue the "${storyName}" adventure story in ${language}. The user chose option ${choice}.
+    // Continuation - add user choice to conversation history with strong format enforcement
+    const choiceMessage = {
+      role: 'user',
+      content: `User chose option ${choice}. 
 
-CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
+CRITICAL: You must continue the ${storyName} story and respond with ONLY a JSON array containing exactly 4 objects. Each object must have "desc" and "options" properties. No other text, no markdown, no explanations.
 
-Format: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]
+Format: [{"desc": "story text", "options": ["option1", "option2", "option3"]}, {"desc": "next story text", "options": ["optionA", "optionB", "optionC"]}, {"desc": "another story text", "options": ["optionX", "optionY", "optionZ"]}, {"desc": "final story text", "options": ["option1", "option2", "option3"]}]
 
-The first object = immediate result of choice ${choice}
-The next 3 objects = possible future steps
-
-Requirements:
-- Keep the story consistent and engaging
-- Educational content appropriate for children
-- Include character interactions
-- Each description should advance the story
-- Return ONLY the raw JSON array, absolutely no markdown formatting.`
+Continue the ${storyName} adventure from where the user made their choice.`,
+    }
+    messages.push(choiceMessage)
   }
 
-  // Make request to Anthropic API
+  // Make request to Anthropic API with conversation history
+  const requestBody = {
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 2000,
+    messages: messages,
+    // Add system message to enforce format consistency
+    system: `You are continuing a story called "${storyName}". You must ALWAYS respond with exactly 4 JSON objects in an array format. Each object must have "desc" and "options" properties. Never respond with markdown, explanations, or any other format. Example: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
+  }
+
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -90,16 +104,7 @@ Requirements:
       'x-api-key': process.env.ANTHROPIC_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-    }),
+    body: JSON.stringify(requestBody),
   })
 
   if (!response.ok) {
@@ -177,14 +182,26 @@ Requirements:
       }
     })
 
+    // Add Claude's response to conversation history
+    messages.push({
+      role: 'assistant',
+      content: content,
+    })
+
+    // Store updated conversation history
+    conversationHistory.set(sessionId, messages)
+
     // Return the current step and the next possible steps
     const [currentStep, ...nextSteps] = validatedSteps
 
     // Log the formatted response
     console.log('✅ Response generated:')
-    console.log('📖 Current Step:', currentStep.desc.substring(0, 80) + '...')
-    console.log('🎯 Options:', currentStep.options.map((opt, i) => `${i + 1}. ${opt}`).join(' | '))
-    console.log('📊 Next Steps Preloaded:', nextSteps.length)
+    console.log('   📖 Current Step:', currentStep.desc)
+    console.log(
+      '   🎯 Options:',
+      currentStep.options.map((opt, i) => `${i + 1}. ${opt}`).join(' | ')
+    )
+    console.log('   📊 Next Steps Preloaded:', nextSteps.length)
 
     return {
       sessionId,
@@ -199,14 +216,96 @@ Requirements:
     )
     console.error('📝 Raw content that failed to parse:', content.substring(0, 500))
 
-    // Try to show cleaned content if it exists in this scope
-    let debugCleanedContent = content.trim()
-    if (debugCleanedContent.startsWith('```json')) {
-      debugCleanedContent = debugCleanedContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
-    } else if (debugCleanedContent.startsWith('```')) {
-      debugCleanedContent = debugCleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+    // If we get a parsing error, try to recover by sending a correction message
+    if (choice !== undefined) {
+      console.error('🔧 Attempting format correction...')
+
+      // Add a strong correction message
+      const correctionMessage = {
+        role: 'user',
+        content: `ERROR: Your previous response was not valid JSON. You MUST respond with ONLY a JSON array containing exactly 4 objects for the ${storyName} story. No markdown, no other text, no explanations.
+
+REQUIRED FORMAT:
+[
+  {"desc": "Description for current step in ${storyName}", "options": ["Option 1", "Option 2", "Option 3"]},
+  {"desc": "Description for next step in ${storyName}", "options": ["Option A", "Option B", "Option C"]},
+  {"desc": "Description for another step in ${storyName}", "options": ["Option X", "Option Y", "Option Z"]},
+  {"desc": "Description for final step in ${storyName}", "options": ["Option 1", "Option 2", "Option 3"]}
+]
+
+Continue the ${storyName} adventure where user chose option ${choice}.`,
+      }
+
+      messages.push(correctionMessage)
+      conversationHistory.set(sessionId, messages)
+
+      // Try one more time with correction
+      try {
+        const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': process.env.ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 2000,
+            messages: messages,
+          }),
+        })
+
+        if (retryResponse.ok) {
+          const retryData = await retryResponse.json()
+          const retryContent = retryData.content[0].text.trim()
+
+          // Clean retry content
+          let cleanedRetryContent = retryContent
+          if (cleanedRetryContent.startsWith('```json')) {
+            cleanedRetryContent = cleanedRetryContent
+              .replace(/^```json\s*/, '')
+              .replace(/\s*```$/, '')
+          } else if (cleanedRetryContent.startsWith('```')) {
+            cleanedRetryContent = cleanedRetryContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
+          }
+
+          try {
+            const retrySteps = JSON.parse(cleanedRetryContent)
+            if (Array.isArray(retrySteps) && retrySteps.length === 4) {
+              console.log('✅ Format correction successful!')
+
+              // Validate and process the corrected response
+              const validatedRetrySteps: StoryStep[] = retrySteps.map((step, index) => ({
+                desc: step.desc || `Continuing ${storyName} adventure...`,
+                options:
+                  Array.isArray(step.options) && step.options.length === 3
+                    ? step.options
+                    : ['Continue', 'Explore', 'Ask questions'],
+              }))
+
+              // Add corrected response to history
+              messages.push({
+                role: 'assistant',
+                content: retryContent,
+              })
+              conversationHistory.set(sessionId, messages)
+
+              const [currentStep, ...nextSteps] = validatedRetrySteps
+              return {
+                sessionId,
+                currentStep,
+                nextSteps,
+                success: true,
+              }
+            }
+          } catch (retryParseError) {
+            console.error('❌ Retry also failed to parse:', retryParseError)
+          }
+        }
+      } catch (retryError) {
+        console.error('❌ Retry request failed:', retryError)
+      }
     }
-    console.error('🧹 Cleaned content that failed to parse:', debugCleanedContent.substring(0, 500))
 
     // Return a fallback response based on language
     const fallbackDesc =
@@ -266,7 +365,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const result = await requestPromise
-
+      console.log('result:', result)
       // Cache the result data (not the Response object)
       cachedResponses.set(requestKey, result)
 
@@ -293,6 +392,19 @@ export async function GET() {
     message: 'Story API is running',
     hasApiKey,
     activeRequests: activeRequests.size,
+    conversationSessions: conversationHistory.size,
     timestamp: new Date().toISOString(),
   })
 }
+
+// Clean up old conversation histories periodically (optional)
+setInterval(() => {
+  // Keep only the most recent 100 sessions to prevent memory leaks
+  if (conversationHistory.size > 100) {
+    const entries = Array.from(conversationHistory.entries())
+    const toKeep = entries.slice(-100)
+    conversationHistory.clear()
+    toKeep.forEach(([key, value]) => conversationHistory.set(key, value))
+    console.log('🧹 Cleaned up old conversation histories')
+  }
+}, 300000) // Every 5 minutes
