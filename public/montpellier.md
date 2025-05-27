@@ -33,7 +33,7 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 - Respond ONLY with the JSON, no other text
 - Always exactly 4 objects in the array
 - Each object must have "desc" and "options" with 3 choices
-- Respond in the language used by user in the first prompt
+- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
 - Keep in memory the choices of users: make it so the story don't repeat itself
 - There must be surprises. Be as creative as you can, but keep the scientific correctness
 - The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
@@ -44,35 +44,35 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 ```json
 [
   {
-    "desc": "You are teleported to the Place de la Comédie in Montpellier during the Middle Ages. Around you, merchants shout to sell their products, horses pull carts, and the smell of warm bread floats in the air. What do you do?",
+    "desc": "Vous voilà télétransporté sur la Place de la Comédie de Montpellier au Moyen Âge. Autour de vous, les marchands crient pour vendre leurs produits, les chevaux tirent des charrettes, et l'odeur du pain chaud flotte dans l'air. Que faites-vous ?",
     "options": [
-      "Observe what's happening here",
-      "Walk around the old town",
-      "Stay at the edge for a moment to observe"
+      "Observer ce qui se passe ici",
+      "Se promener dans la vieille ville",
+      "Rester en retrait un moment pour observer"
     ]
   },
   {
-    "desc": "You approach the colorful stalls and discover Jean-Jean, a jovial merchant who sells beautiful red apples. He smiles warmly at you and explains that he buys his fruits from the peasants in the surrounding area.",
+    "desc": "Vous vous approchez des étals colorés et découvrez Jean-Jean, un marchand jovial qui vend de belles pommes rouges. Il vous sourit chaleureusement et vous explique qu'il achète ses fruits aux paysans des environs.",
     "options": [
-      "Ask Jean-Jean how trade works",
-      "Offer to help him carry his apples",
-      "Ask him to give you a tour of the city"
+      "Demander à Jean-Jean comment fonctionne le commerce",
+      "Proposer de l'aider à porter ses pommes",
+      "Lui demander de vous faire visiter la ville"
     ]
   },
   {
-    "desc": "You explore the cobbled streets of the old town and discover wooden houses with upper floors that overhang the street. Craftsmen work in front of their workshops: blacksmith, cobbler, weaver.",
+    "desc": "Vous explorez les rues pavées de la vieille ville et découvrez des maisons en bois dont les étages supérieurs surplombent la rue. Les artisans travaillent devant leurs ateliers : forgeron, cordonnier, tisserand.",
     "options": [
-      "Enter the blacksmith's workshop",
-      "Watch the weaver work",
-      "Continue toward the lord's castle"
+      "Entrer dans l'atelier du forgeron",
+      "Regarder le tisserand travailler",
+      "Continuer vers le château du seigneur"
     ]
   },
   {
-    "desc": "From the edge of the square, you observe medieval life: monks in brown robes heading toward the abbey, nobles on horseback crossing through the crowd, and children playing with wooden hoops.",
+    "desc": "Depuis le bord de la place, vous observez la vie médiévale : des moines en robes brunes se dirigent vers l'abbaye, des nobles à cheval traversent la foule, et des enfants jouent avec des cerceaux en bois.",
     "options": [
-      "Follow the monks toward the abbey",
-      "Approach the children who are playing",
-      "Observe the nobles and their entourage"
+      "Suivre les moines vers l'abbaye",
+      "Approcher les enfants qui jouent",
+      "Observer les nobles et leur suite"
     ]
   }
 ]
@@ -81,8 +81,6 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 ## Story Context
 
 **Jean-Jean:** A playful, funny, and benevolent character who guides the adventure. He's a merchant that sells apples he buys from the peasants at the periphery of the city. HE SHOULD APPEAR FREQUENTLY as the main guide.
-
-- STAY TRUE TO THE STORY: Keep Jean-Jean as the main guide character
 
 **Educational Objectives:**
 - Discover the life in Montpellier in the 10th century

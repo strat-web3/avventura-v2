@@ -64,7 +64,7 @@ const StoriesGrid: React.FC = () => {
     },
     {
       name: 'The Truman Show',
-      slug: 'trueman',
+      slug: 'truman',
       description: 'Experience the real world for the first time after a lifetime in a TV show!',
     },
   ]

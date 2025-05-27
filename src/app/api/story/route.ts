@@ -51,10 +51,45 @@ async function processStoryRequest(body: StoryRequest): Promise<any> {
     try {
       const filePath = join(process.cwd(), 'public', `${storyName}.md`)
       const fileContent = await readFile(filePath, 'utf-8')
-      prompt = fileContent // Just use the instruction file directly
+
+      // For the first step, we should return the predefined first step from the instruction file
+      // Extract the mandatory first step from the file
+      const firstStepMatch = fileContent.match(
+        /## Mandatory First Step\s*```json\s*([\s\S]*?)\s*```/
+      )
+
+      if (firstStepMatch) {
+        try {
+          const predefinedFirstStep = JSON.parse(firstStepMatch[1])
+          console.log(`📋 Using predefined first step for: ${storyName}`)
+
+          // Initialize conversation history with the full instructions
+          messages = [
+            {
+              role: 'user',
+              content: fileContent,
+            },
+          ]
+          conversationHistory.set(sessionId, messages)
+
+          // Return the predefined first step structure
+          const [currentStep, ...nextSteps] = predefinedFirstStep
+          return {
+            sessionId,
+            currentStep,
+            nextSteps,
+            success: true,
+          }
+        } catch (parseError) {
+          console.error('❌ Failed to parse predefined first step:', parseError)
+          // Fall back to API generation
+        }
+      }
+
+      // Fallback: use API if no predefined step found
+      prompt = fileContent
       console.log(`📋 Loaded story instructions for: ${storyName}`)
 
-      // Initialize conversation history
       messages = [
         {
           role: 'user',
@@ -63,7 +98,6 @@ async function processStoryRequest(body: StoryRequest): Promise<any> {
       ]
     } catch (fileError) {
       console.log(`⚠️ No instructions file found for ${storyName}`)
-      // Only use fallback if no instruction file exists
       prompt = `Create a simple interactive story named "${storyName}" in ${language}. Return only JSON array with 4 objects: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`
 
       messages = [
@@ -81,6 +115,13 @@ async function processStoryRequest(body: StoryRequest): Promise<any> {
 
 CRITICAL: You must continue the ${storyName} story and respond with ONLY a JSON array containing exactly 4 objects. Each object must have "desc" and "options" properties. No other text, no markdown, no explanations.
 
+IMPORTANT: Follow the story structure and character guidelines from the original instructions. Make sure to:
+- Keep the tone appropriate for the target audience
+- Include the main guide characters when appropriate
+- Follow the educational objectives specified in the instructions
+- Ensure story continuity from the user's choice
+- Respond in the same language as the original instructions
+
 Format: [{"desc": "story text", "options": ["option1", "option2", "option3"]}, {"desc": "next story text", "options": ["optionA", "optionB", "optionC"]}, {"desc": "another story text", "options": ["optionX", "optionY", "optionZ"]}, {"desc": "final story text", "options": ["option1", "option2", "option3"]}]
 
 Continue the ${storyName} adventure from where the user made their choice.`,
@@ -93,8 +134,17 @@ Continue the ${storyName} adventure from where the user made their choice.`,
     model: 'claude-sonnet-4-20250514',
     max_tokens: 2000,
     messages: messages,
-    // Add system message to enforce format consistency
-    system: `You are continuing a story called "${storyName}". You must ALWAYS respond with exactly 4 JSON objects in an array format. Each object must have "desc" and "options" properties. Never respond with markdown, explanations, or any other format. Example: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
+    // Add system message to enforce format consistency and story guidelines
+    system: `You are continuing a story called "${storyName}". You must ALWAYS respond with exactly 4 JSON objects in an array format. Each object must have "desc" and "options" properties. Never respond with markdown, explanations, or any other format.
+
+STORY GUIDELINES:
+- Follow the tone and audience specified in the story instructions
+- Include the main guide characters when appropriate as specified in the instructions
+- Focus on the educational aspects outlined in the story context
+- Ensure story continuity and follow the established narrative structure
+- Respond in the same language as the original instructions
+
+Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
   }
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -365,7 +415,7 @@ export async function POST(request: NextRequest) {
 
     try {
       const result = await requestPromise
-      console.log('result:', result)
+
       // Cache the result data (not the Response object)
       cachedResponses.set(requestKey, result)
 
