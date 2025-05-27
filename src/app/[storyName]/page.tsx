@@ -197,10 +197,8 @@ export default function StoryPage() {
   }, [storyName, isInitialized, toast, t.common.error])
 
   const handleTypingComplete = useCallback(() => {
-    console.log(`⌨️ Typing complete, showing options in 500ms`)
-    setTimeout(() => {
-      setShowOptionsWithLogging(true, 'Typing animation completed')
-    }, 500)
+    console.log(`⌨️ Typing complete, showing options immediately`)
+    setShowOptionsWithLogging(true, 'Typing animation completed')
   }, [])
 
   const nextStep = async (choice: number) => {
