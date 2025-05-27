@@ -7,7 +7,7 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 ```json
 [
   {
-    "desc": "Description of the current step in English",
+    "desc": "Description of the current step",
     "options": [
       "Option 1",
       "Option 2", 
@@ -36,7 +36,8 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 - Respond in the language used by user in the first prompt
 - Keep in memory the choices of users: make it so the story don't repeat itself
 - There must be surprises. Be as creative as you can, but keep the scientific correctness
-- The description MUST correspond to the previously selected option
+- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
+- CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
 
 ## Mandatory First Step
 
