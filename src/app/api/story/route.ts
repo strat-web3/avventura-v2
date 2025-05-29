@@ -32,13 +32,87 @@ function getRequestKey(sessionId: string, choice?: number): string {
   return `${sessionId}_${choice || 'first'}`
 }
 
+// Helper function to make Anthropic API call with retry
+async function makeAnthropicRequest(requestBody: any, attempt: number = 1): Promise<any> {
+  console.log(`📡 Making request to Anthropic API (attempt ${attempt})...`, {
+    model: requestBody.model,
+    messageCount: requestBody.messages.length,
+  })
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    console.log(`📡 API Response Details (attempt ${attempt}):`, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      url: response.url,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.text()
+      console.error(`❌ Anthropic API error details (attempt ${attempt}):`, {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorData.length > 500 ? errorData.substring(0, 500) + '...' : errorData,
+        headers: Object.fromEntries(response.headers.entries()),
+      })
+      throw new Error(
+        `Anthropic API Error ${response.status}: ${response.statusText} - ${errorData}`
+      )
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error(`❌ Request failed (attempt ${attempt}):`, error)
+
+    // If this is the first attempt and it failed, wait 1 second and retry
+    if (attempt === 1) {
+      console.log('⏳ Waiting 1 second before retry...')
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      return makeAnthropicRequest(requestBody, 2)
+    }
+
+    // If this is the second attempt and it failed, wait 2 seconds and retry
+    if (attempt === 2) {
+      console.log('⏳ Waiting 2 seconds before final retry...')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return makeAnthropicRequest(requestBody, 3)
+    }
+
+    // If third attempt also failed, throw the error
+    throw error
+  }
+}
+
 // Main processing function - returns data object, not NextResponse
 async function processStoryRequest(body: StoryRequest): Promise<any> {
   const { sessionId, choice, storyName, language = 'fr' } = body
 
+  // Enhanced environment variable checking
+  console.log('🔍 Environment Check:', {
+    hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
+    keyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
+    keyPrefix: process.env.ANTHROPIC_API_KEY?.substring(0, 12) + '...',
+    nodeEnv: process.env.NODE_ENV,
+  })
+
   if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('ANTHROPIC_API_KEY not found in environment')
+    console.error('❌ ANTHROPIC_API_KEY not found in environment')
     throw new Error('Anthropic API key not configured')
+  }
+
+  if (!process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
+    console.error('❌ Invalid ANTHROPIC_API_KEY format - should start with sk-ant-')
+    throw new Error('Invalid API key format')
   }
 
   // Get or initialize conversation history for this session
@@ -129,9 +203,9 @@ Continue the ${storyName} adventure from where the user made their choice.`,
     messages.push(choiceMessage)
   }
 
-  // Make request to Anthropic API with conversation history
+  // Make request to Anthropic API with conversation history and retry logic
   const requestBody = {
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-4-opus-20250514',
     max_tokens: 2000,
     messages: messages,
     // Add system message to enforce format consistency and story guidelines
@@ -147,26 +221,15 @@ STORY GUIDELINES:
 Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
   }
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(requestBody),
-  })
-
-  if (!response.ok) {
-    const errorData = await response.text()
-    console.error('❌ Anthropic API error:', response.status, errorData)
-    throw new Error(`API Error: ${response.status}`)
-  }
-
-  const data = await response.json()
+  const data = await makeAnthropicRequest(requestBody)
 
   if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
-    console.error('❌ Invalid API response structure')
+    console.error('❌ Invalid API response structure:', {
+      hasContent: !!data.content,
+      isArray: Array.isArray(data.content),
+      length: data.content?.length || 0,
+      dataKeys: Object.keys(data),
+    })
     throw new Error('Invalid response from AI service')
   }
 
@@ -183,14 +246,22 @@ Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {.
       cleanedContent = cleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
     }
 
+    console.log('🧹 Cleaned content preview:', cleanedContent.substring(0, 200) + '...')
+
     // Parse the JSON response from Claude
     const storySteps: any[] = JSON.parse(cleanedContent.trim())
 
     // Validate the response format
     if (!Array.isArray(storySteps) || storySteps.length !== 4) {
-      console.error('❌ Invalid response format - expected 4 steps, got:', storySteps.length)
-      console.error('📝 Raw content received:', content.substring(0, 200) + '...')
-      throw new Error('Invalid response format from AI')
+      console.error('❌ Invalid response format - expected 4 steps, got:', {
+        isArray: Array.isArray(storySteps),
+        length: storySteps.length,
+        firstStep: storySteps[0],
+        content: content.substring(0, 300) + '...',
+      })
+      throw new Error(
+        `Invalid response format from AI - expected 4 steps, got ${storySteps.length}`
+      )
     }
 
     // Transform and validate each step to ensure correct format
@@ -245,13 +316,13 @@ Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {.
     const [currentStep, ...nextSteps] = validatedSteps
 
     // Log the formatted response
-    console.log('✅ Response generated:')
-    console.log('   📖 Current Step:', currentStep.desc)
-    console.log(
-      '   🎯 Options:',
-      currentStep.options.map((opt, i) => `${i + 1}. ${opt}`).join(' | ')
-    )
-    console.log('   📊 Next Steps Preloaded:', nextSteps.length)
+    console.log('✅ Response generated successfully:', {
+      storyName,
+      sessionId: sessionId.slice(-8),
+      currentStepLength: currentStep.desc.length,
+      optionsCount: currentStep.options.length,
+      nextStepsCount: nextSteps.length,
+    })
 
     return {
       sessionId,
@@ -260,15 +331,17 @@ Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {.
       success: true,
     }
   } catch (parseError) {
-    console.error(
-      '❌ Failed to parse AI response:',
-      parseError instanceof Error ? parseError.message : parseError
-    )
-    console.error('📝 Raw content that failed to parse:', content.substring(0, 500))
+    console.error('❌ Failed to parse AI response:', {
+      error: parseError instanceof Error ? parseError.message : parseError,
+      contentPreview: content.substring(0, 500),
+      contentLength: content.length,
+      sessionId: sessionId.slice(-8),
+      storyName,
+    })
 
     // If we get a parsing error, try to recover by sending a correction message
     if (choice !== undefined) {
-      console.error('🔧 Attempting format correction...')
+      console.log('🔧 Attempting format correction...')
 
       // Add a strong correction message
       const correctionMessage = {
@@ -289,24 +362,18 @@ Continue the ${storyName} adventure where user chose option ${choice}.`,
       messages.push(correctionMessage)
       conversationHistory.set(sessionId, messages)
 
-      // Try one more time with correction
+      // Try one more time with correction (also with retry)
       try {
-        const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': process.env.ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 2000,
-            messages: messages,
-          }),
+        console.log('🔧 Making correction request...')
+        const retryData = await makeAnthropicRequest({
+          model: 'claude-4-sonnet-20250514',
+          max_tokens: 2000,
+          messages: messages,
         })
 
-        if (retryResponse.ok) {
-          const retryData = await retryResponse.json()
+        console.log('🔧 Correction response received')
+
+        if (retryData.content && retryData.content[0]) {
           const retryContent = retryData.content[0].text.trim()
 
           // Clean retry content
@@ -387,6 +454,14 @@ export async function POST(request: NextRequest) {
 
     const requestKey = getRequestKey(sessionId, choice)
 
+    console.log('📨 Story API Request:', {
+      storyName,
+      choice: choice || 'initial',
+      sessionId: sessionId.slice(-8),
+      language,
+      timestamp: new Date().toISOString(),
+    })
+
     // Check if we have a cached response for this exact request
     if (cachedResponses.has(requestKey)) {
       console.log(
@@ -405,10 +480,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result)
     }
 
-    console.log(
-      `📨 Story API Request: ${storyName} | Choice: ${choice || 'first'} | Session: ${sessionId.slice(-8)}`
-    )
-
     // Create and store the request promise
     const requestPromise = processStoryRequest(body)
     activeRequests.set(requestKey, requestPromise)
@@ -418,6 +489,13 @@ export async function POST(request: NextRequest) {
 
       // Cache the result data (not the Response object)
       cachedResponses.set(requestKey, result)
+
+      console.log('✅ Request completed successfully:', {
+        storyName,
+        choice: choice || 'initial',
+        sessionId: sessionId.slice(-8),
+        success: result.success,
+      })
 
       return NextResponse.json(result)
     } finally {
@@ -430,17 +508,33 @@ export async function POST(request: NextRequest) {
       }, 30000)
     }
   } catch (error) {
-    console.error('❌ Story API Error:', error instanceof Error ? error.message : error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    console.error('❌ Story API Error:', {
+      error: error instanceof Error ? error.message : error,
+      stack: error instanceof Error ? error.stack : undefined,
+      timestamp: new Date().toISOString(),
+    })
+
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    )
   }
 }
 
 export async function GET() {
   // Test endpoint to verify API is working
   const hasApiKey = !!process.env.ANTHROPIC_API_KEY
+  const isValidKey = process.env.ANTHROPIC_API_KEY?.startsWith('sk-ant-') || false
+
   return NextResponse.json({
     message: 'Story API is running',
     hasApiKey,
+    isValidKey,
+    keyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
     activeRequests: activeRequests.size,
     conversationSessions: conversationHistory.size,
     timestamp: new Date().toISOString(),
