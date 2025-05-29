@@ -81,7 +81,14 @@ async function makeAnthropicRequest(requestBody: any, attempt: number = 1): Prom
       return makeAnthropicRequest(requestBody, 2)
     }
 
-    // If second attempt also failed, throw the error
+    // If this is the second attempt and it failed, wait 2 seconds and retry
+    if (attempt === 2) {
+      console.log('⏳ Waiting 2 seconds before final retry...')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      return makeAnthropicRequest(requestBody, 3)
+    }
+
+    // If third attempt also failed, throw the error
     throw error
   }
 }
