@@ -32,6 +32,60 @@ function getRequestKey(sessionId: string, choice?: number): string {
   return `${sessionId}_${choice || 'first'}`
 }
 
+// Helper function to make Anthropic API call with retry
+async function makeAnthropicRequest(requestBody: any, attempt: number = 1): Promise<any> {
+  console.log(`📡 Making request to Anthropic API (attempt ${attempt})...`, {
+    model: requestBody.model,
+    messageCount: requestBody.messages.length,
+  })
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': process.env.ANTHROPIC_API_KEY!,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify(requestBody),
+    })
+
+    console.log(`📡 API Response Details (attempt ${attempt}):`, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries(response.headers.entries()),
+      url: response.url,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.text()
+      console.error(`❌ Anthropic API error details (attempt ${attempt}):`, {
+        status: response.status,
+        statusText: response.statusText,
+        body: errorData.length > 500 ? errorData.substring(0, 500) + '...' : errorData,
+        headers: Object.fromEntries(response.headers.entries()),
+      })
+      throw new Error(
+        `Anthropic API Error ${response.status}: ${response.statusText} - ${errorData}`
+      )
+    }
+
+    return await response.json()
+  } catch (error) {
+    console.error(`❌ Request failed (attempt ${attempt}):`, error)
+
+    // If this is the first attempt and it failed, wait 1 second and retry
+    if (attempt === 1) {
+      console.log('⏳ Waiting 1 second before retry...')
+      await new Promise(resolve => setTimeout(resolve, 1000))
+      return makeAnthropicRequest(requestBody, 2)
+    }
+
+    // If second attempt also failed, throw the error
+    throw error
+  }
+}
+
 // Main processing function - returns data object, not NextResponse
 async function processStoryRequest(body: StoryRequest): Promise<any> {
   const { sessionId, choice, storyName, language = 'fr' } = body
@@ -142,7 +196,7 @@ Continue the ${storyName} adventure from where the user made their choice.`,
     messages.push(choiceMessage)
   }
 
-  // Make request to Anthropic API with conversation history
+  // Make request to Anthropic API with conversation history and retry logic
   const requestBody = {
     model: 'claude-4-opus-20250514',
     max_tokens: 2000,
@@ -160,48 +214,7 @@ STORY GUIDELINES:
 Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
   }
 
-  console.log('📡 Making request to Anthropic API...', {
-    model: requestBody.model,
-    messageCount: requestBody.messages.length,
-    storyName,
-    choice: choice || 'initial',
-    sessionId: sessionId.slice(-8),
-  })
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify(requestBody),
-  })
-
-  console.log('📡 API Response Details:', {
-    status: response.status,
-    statusText: response.statusText,
-    headers: Object.fromEntries(response.headers.entries()),
-    url: response.url,
-  })
-
-  if (!response.ok) {
-    const errorData = await response.text()
-    console.error('❌ Anthropic API error details:', {
-      status: response.status,
-      statusText: response.statusText,
-      body: errorData.length > 500 ? errorData.substring(0, 500) + '...' : errorData,
-      headers: Object.fromEntries(response.headers.entries()),
-      requestBody: {
-        model: requestBody.model,
-        messageCount: requestBody.messages.length,
-        systemLength: requestBody.system.length,
-      },
-    })
-    throw new Error(`Anthropic API Error ${response.status}: ${response.statusText} - ${errorData}`)
-  }
-
-  const data = await response.json()
+  const data = await makeAnthropicRequest(requestBody)
 
   if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
     console.error('❌ Invalid API response structure:', {
@@ -342,27 +355,18 @@ Continue the ${storyName} adventure where user chose option ${choice}.`,
       messages.push(correctionMessage)
       conversationHistory.set(sessionId, messages)
 
-      // Try one more time with correction
+      // Try one more time with correction (also with retry)
       try {
         console.log('🔧 Making correction request...')
-        const retryResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': process.env.ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-          },
-          body: JSON.stringify({
-            model: 'claude-4-sonnet-20250514',
-            max_tokens: 2000,
-            messages: messages,
-          }),
+        const retryData = await makeAnthropicRequest({
+          model: 'claude-4-sonnet-20250514',
+          max_tokens: 2000,
+          messages: messages,
         })
 
-        console.log('🔧 Correction response status:', retryResponse.status)
+        console.log('🔧 Correction response received')
 
-        if (retryResponse.ok) {
-          const retryData = await retryResponse.json()
+        if (retryData.content && retryData.content[0]) {
           const retryContent = retryData.content[0].text.trim()
 
           // Clean retry content
