@@ -134,8 +134,9 @@ export default function StoryPage() {
     setIsLoading(value)
   }
 
-  // Updated callStoryAPI function with conversation history
   const callStoryAPI = async (requestData: StoryRequest): Promise<StoryResponse | null> => {
+    const startTime = performance.now()
+
     try {
       console.log('Calling story API with data:', {
         ...requestData,
@@ -150,6 +151,10 @@ export default function StoryPage() {
         body: JSON.stringify(requestData),
       })
 
+      const endTime = performance.now()
+      const durationSeconds = ((endTime - startTime) / 1000).toFixed(2)
+
+      console.log(`📊 API Call completed in ${durationSeconds} seconds`)
       console.log('API response status:', response.status)
 
       if (!response.ok) {
@@ -164,7 +169,10 @@ export default function StoryPage() {
 
       return data
     } catch (error) {
-      console.error('Error calling story API:', error)
+      const endTime = performance.now()
+      const durationSeconds = ((endTime - startTime) / 1000).toFixed(2)
+
+      console.error(`❌ API Call failed after ${durationSeconds} seconds:`, error)
       toast({
         title: 'Error',
         description: 'Failed to load story. Please try again.',
@@ -324,7 +332,7 @@ export default function StoryPage() {
         choice: choice,
         storyName: storyName,
         language: 'français',
-        conversationHistory: conversationHistory, // Send current conversation history
+        conversationHistory: conversationHistory, // Send conversation history to indicate this is NOT a new conversation
       })
 
       if (response && response.success) {
