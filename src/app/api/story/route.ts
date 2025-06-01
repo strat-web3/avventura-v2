@@ -8,6 +8,7 @@ interface StoryRequest {
   storyName: string
   language?: string
   forceRestart?: boolean
+  conversationHistory?: Message[] // Add this - client sends conversation
 }
 
 interface StoryStep {
@@ -16,71 +17,35 @@ interface StoryStep {
   options: string[]
 }
 
-interface StoryResponse {
-  sessionId?: string
-  currentStep: StoryStep
-  nextSteps: StoryStep[]
-  success: boolean
-  error?: string
-  shouldRestart?: boolean
-}
-
 interface Message {
   role: 'user' | 'assistant'
   content: string
 }
 
-// In-memory session storage (replace with database in production)
-const sessionStorage = new Map<string, Message[]>()
-
+// NO server-side storage - completely stateless
 function parseStoryResponse(response: string): { currentStep: StoryStep; nextSteps: StoryStep[] } {
   try {
-    // Remove any markdown code block formatting
     const cleanResponse = response.replace(/```json\s*|\s*```/g, '').trim()
-
-    // Parse the JSON response
     const parsed = JSON.parse(cleanResponse)
 
-    // Handle new format: single object with current step
     if (parsed.desc && Array.isArray(parsed.options)) {
-      // Validate the single step format
       if (parsed.options.length !== 3) {
         throw new Error(`Invalid step format: expected 3 options, got ${parsed.options.length}`)
       }
 
-      // Create current step and empty next steps
       return {
         currentStep: {
-          step: 1, // Will be updated based on conversation history
+          step: 1,
           desc: parsed.desc,
           options: parsed.options,
         },
-        nextSteps: [], // No pre-generated next steps in new format
+        nextSteps: [],
       }
     }
 
-    // Handle old format: array with 4 objects (for backward compatibility)
-    if (Array.isArray(parsed) && parsed.length === 4) {
-      // Validate each step has required properties
-      for (let i = 0; i < parsed.length; i++) {
-        const step = parsed[i]
-        if (!step.desc || !Array.isArray(step.options) || step.options.length !== 3) {
-          throw new Error(`Invalid step ${i}: missing desc or options`)
-        }
-      }
-
-      return {
-        currentStep: { ...parsed[0], step: 1 },
-        nextSteps: parsed.slice(1).map((step, index) => ({ ...step, step: index + 2 })),
-      }
-    }
-
-    throw new Error(
-      'Invalid response format: expected either single object with desc/options or array with 4 objects'
-    )
+    throw new Error('Invalid response format: expected object with desc/options')
   } catch (error) {
     console.error('Error parsing story response:', error)
-    console.error('Raw response:', response)
     throw new Error('Failed to parse story response')
   }
 }
@@ -91,6 +56,8 @@ async function callClaude(messages: Message[]): Promise<string> {
   if (!anthropicApiKey) {
     throw new Error('ANTHROPIC_API_KEY is not configured')
   }
+
+  console.log('🚀 Calling Claude API with', messages.length, 'messages')
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -109,7 +76,7 @@ async function callClaude(messages: Message[]): Promise<string> {
 
   if (!response.ok) {
     const errorText = await response.text()
-    console.error('Claude API Error:', response.status, errorText)
+    console.error('❌ Claude API Error:', response.status, errorText)
     throw new Error(`Claude API error: ${response.status}`)
   }
 
@@ -117,53 +84,8 @@ async function callClaude(messages: Message[]): Promise<string> {
   return data.content[0].text
 }
 
-export async function POST(request: NextRequest) {
-  try {
-    const body: StoryRequest = await request.json()
-    const { sessionId, choice, storyName, language = 'français', forceRestart = false } = body
-
-    console.log('Story API Request:', { sessionId, choice, storyName, language, forceRestart })
-
-    if (!sessionId || !storyName) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: 'Missing required parameters: sessionId and storyName',
-        },
-        { status: 400 }
-      )
-    }
-
-    try {
-      // Handle force restart
-      if (forceRestart) {
-        console.log(`Force restarting session: ${sessionId} for story: ${storyName}`)
-        sessionStorage.delete(sessionId)
-      }
-
-      // Get or create conversation history
-      let history = sessionStorage.get(sessionId) || []
-
-      if (history.length === 0) {
-        console.log(`Initialized new server session: ${sessionId} for story: ${storyName}`)
-
-        // Read the story file from public folder
-        const storyFilePath = path.join(process.cwd(), 'public', `${storyName}.md`)
-
-        if (!fs.existsSync(storyFilePath)) {
-          return NextResponse.json(
-            {
-              success: false,
-              error: `Story '${storyName}' not found`,
-            },
-            { status: 404 }
-          )
-        }
-
-        const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
-
-        // Standard instructions for all stories (put in first prompt)
-        const standardInstructions = `# INSTRUCTIONS FOR THE ADVENTURE
+function createInitialSystemMessage(storyContent: string, language: string): string {
+  return `# INSTRUCTIONS FOR THE ADVENTURE
 
 ## Mandatory Response Format
 
@@ -185,127 +107,164 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model:
 - Respond in the language: ${language}
 - Keep in memory the choices of users: make it so the story don't repeat itself
 - There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
+- The description MUST correspond to the previously selected option to ensure continuity
 - CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
 
 ## Story Content:
 
-${storyContent}`
+${storyContent}
 
-        // Create the first prompt content
-        const firstPromptContent = forceRestart
-          ? `Please start a new adventure based on this story. Begin from the very first step.\n\n${standardInstructions}`
-          : `Please start this adventure story from the beginning.\n\n${standardInstructions}`
+## User Communication Protocol
 
-        // Log the full first prompt for debugging
-        console.log('=== FIRST PROMPT CONTENT ===')
-        console.log(firstPromptContent)
-        console.log('=== END FIRST PROMPT ===')
+After this initial setup, the user will communicate with you using only simple choice messages like "Choice 1", "Choice 2", or "Choice 3". You should interpret these as the user selecting that numbered option from your previous response and continue the story accordingly.
 
-        // Initialize conversation with story content
-        history.push({
-          role: 'user',
-          content: firstPromptContent,
-        })
+Now please start this adventure story from the beginning.`
+}
 
-        console.log(
-          forceRestart
-            ? `Starting restarted story: ${storyName} for session: ${sessionId}`
-            : `Starting new story: ${storyName} for session: ${sessionId}`
-        )
-      } else if (choice !== undefined) {
-        // Add user choice to conversation
-        history.push({
-          role: 'user',
-          content: `I choose option ${choice}. Please continue the story and provide the next step following the format instructions.`,
-        })
+export async function POST(request: NextRequest) {
+  try {
+    const body: StoryRequest = await request.json()
+    const {
+      sessionId,
+      choice,
+      storyName,
+      language = 'français',
+      forceRestart = false,
+      conversationHistory = [], // Client provides conversation history
+    } = body
 
-        console.log(`User selected choice ${choice} for session: ${sessionId}`)
-      } else {
-        // Just continuing existing story without a choice (e.g., page refresh)
-        console.log(`Continuing existing story for session: ${sessionId}`)
-      }
+    console.log('🎮 Stateless Story API Request:', {
+      sessionId,
+      choice,
+      storyName,
+      language,
+      forceRestart,
+      historyLength: conversationHistory.length,
+    })
 
-      // Call Claude API
-      const claudeResponse = await callClaude(history)
-      console.log('Claude response received')
-
-      // Add Claude's response to history
-      history.push({
-        role: 'assistant',
-        content: claudeResponse,
-      })
-
-      // Update session storage
-      sessionStorage.set(sessionId, history)
-
-      // Parse the response
-      const parsedResponse = parseStoryResponse(claudeResponse)
-
-      // Calculate current step number based on conversation history
-      const userChoices = history.filter(
-        msg => msg.role === 'user' && msg.content.includes('I choose option')
-      ).length
-      const currentStepNumber = userChoices + 1
-
-      const result: StoryResponse = {
-        sessionId,
-        currentStep: {
-          ...parsedResponse.currentStep,
-          step: currentStepNumber,
-        },
-        nextSteps: parsedResponse.nextSteps,
-        success: true,
-      }
-
-      console.log('Story API Response:', {
-        sessionId,
-        currentStep: result.currentStep.step,
-        success: true,
-      })
-      return NextResponse.json(result)
-    } catch (error) {
-      console.error('Error in story processing:', error)
-
-      // If the session might be corrupted, suggest restart
-      if (error instanceof Error && error.message.includes('parse')) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Failed to parse story response',
-            shouldRestart: true,
-          },
-          { status: 500 }
-        )
-      }
-
+    if (!sessionId || !storyName) {
       return NextResponse.json(
         {
           success: false,
-          error: error instanceof Error ? error.message : 'Unknown error occurred',
+          error: 'Missing required parameters: sessionId and storyName',
         },
-        { status: 500 }
+        { status: 400 }
       )
     }
+
+    let history = [...conversationHistory] // Work with copy
+
+    // Handle new conversation or force restart
+    if (history.length === 0 || forceRestart) {
+      console.log(`🆕 Starting new conversation for: ${storyName}`)
+
+      // Read the story file
+      const storyFilePath = path.join(process.cwd(), 'public', `${storyName}.md`)
+
+      if (!fs.existsSync(storyFilePath)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Story '${storyName}' not found`,
+          },
+          { status: 404 }
+        )
+      }
+
+      const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
+      const initialMessage = createInitialSystemMessage(storyContent, language)
+
+      // Reset history and add initial message
+      history = [
+        {
+          role: 'user',
+          content: initialMessage,
+        },
+      ]
+    } else if (choice !== undefined) {
+      // Add user choice
+      const choiceMessage = `Choice ${choice}`
+      history.push({
+        role: 'user',
+        content: choiceMessage,
+      })
+
+      console.log(`🎯 User selected choice ${choice}`)
+    } else {
+      // Continuing existing conversation - check if we need Claude's response
+      if (history.length > 0 && history[history.length - 1].role === 'assistant') {
+        // We have the last response, return it
+        const lastResponse = history[history.length - 1].content
+        console.log('📋 Returning cached response from client history')
+
+        try {
+          const parsedResponse = parseStoryResponse(lastResponse)
+          const userChoices = history.filter(
+            msg => msg.role === 'user' && msg.content.startsWith('Choice ')
+          ).length
+
+          return NextResponse.json({
+            sessionId,
+            currentStep: {
+              ...parsedResponse.currentStep,
+              step: userChoices + 1,
+            },
+            nextSteps: parsedResponse.nextSteps,
+            conversationHistory: history, // Return updated history
+            success: true,
+          })
+        } catch (error) {
+          console.error('❌ Error parsing cached response:', error)
+          // Fall through to make new API call
+        }
+      }
+    }
+
+    // Call Claude API
+    console.log(`📊 Calling Claude with ${history.length} messages`)
+    const claudeResponse = await callClaude(history)
+
+    // Add Claude's response to history
+    history.push({
+      role: 'assistant',
+      content: claudeResponse,
+    })
+
+    // Parse the response
+    const parsedResponse = parseStoryResponse(claudeResponse)
+    const userChoices = history.filter(
+      msg => msg.role === 'user' && msg.content.startsWith('Choice ')
+    ).length
+
+    const result = {
+      sessionId,
+      currentStep: {
+        ...parsedResponse.currentStep,
+        step: userChoices + 1,
+      },
+      nextSteps: parsedResponse.nextSteps,
+      conversationHistory: history, // Return complete conversation history
+      success: true,
+    }
+
+    console.log('✅ Stateless API response ready')
+    return NextResponse.json(result)
   } catch (error) {
-    console.error('Error parsing request body:', error)
+    console.error('❌ Error in stateless story processing:', error)
+
     return NextResponse.json(
       {
         success: false,
-        error: 'Invalid request format',
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
       },
-      { status: 400 }
+      { status: 500 }
     )
   }
 }
 
-// Health check endpoint
 export async function GET() {
-  const sessionCount = sessionStorage.size
-
   return NextResponse.json({
-    status: 'healthy',
-    sessions: sessionCount,
+    status: 'healthy - stateless',
     timestamp: new Date().toISOString(),
   })
 }

@@ -10,12 +10,18 @@ import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
 import { SessionManager } from '@/app/utils/sessionStorage'
 
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 interface StoryRequest {
   sessionId: string
   choice?: number
   storyName: string
   language?: string
   forceRestart?: boolean
+  conversationHistory?: Message[] // Add conversation history
 }
 
 interface StoryStep {
@@ -28,6 +34,7 @@ interface StoryResponse {
   sessionId?: string
   currentStep: StoryStep
   nextSteps: StoryStep[]
+  conversationHistory?: Message[] // Add conversation history to response
   success: boolean
   error?: string
   shouldRestart?: boolean
@@ -92,7 +99,7 @@ export default function StoryPage() {
   const [nextSteps, setNextSteps] = useState<StoryStep[]>([])
   const [sessionId, setSessionId] = useState<string>('')
   const [isInitialized, setIsInitialized] = useState(false)
-  const [isLoadingBackground, setIsLoadingBackground] = useState(false)
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([]) // Add conversation history state
 
   // Simple ref to prevent duplicate initialization in React Strict Mode
   const initializeOnce = useRef(false)
@@ -127,10 +134,13 @@ export default function StoryPage() {
     setIsLoading(value)
   }
 
-  // Single, properly typed callStoryAPI function
+  // Updated callStoryAPI function with conversation history
   const callStoryAPI = async (requestData: StoryRequest): Promise<StoryResponse | null> => {
     try {
-      console.log('Calling story API with data:', requestData)
+      console.log('Calling story API with data:', {
+        ...requestData,
+        conversationHistoryLength: requestData.conversationHistory?.length || 0,
+      })
 
       const response = await fetch('/api/story', {
         method: 'POST',
@@ -147,7 +157,10 @@ export default function StoryPage() {
       }
 
       const data: StoryResponse = await response.json()
-      console.log('API response data:', data)
+      console.log('API response data:', {
+        ...data,
+        conversationHistoryLength: data.conversationHistory?.length || 0,
+      })
 
       return data
     } catch (error) {
@@ -160,6 +173,37 @@ export default function StoryPage() {
         isClosable: true,
       })
       return null
+    }
+  }
+
+  // Load conversation history from localStorage
+  const loadConversationHistory = (storyName: string, sessionId: string): Message[] => {
+    if (typeof window === 'undefined') return []
+
+    try {
+      const key = `conversation_${storyName}_${sessionId}`
+      const stored = localStorage.getItem(key)
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        console.log(`Loaded conversation history: ${parsed.length} messages`)
+        return parsed
+      }
+    } catch (error) {
+      console.error('Error loading conversation history:', error)
+    }
+    return []
+  }
+
+  // Save conversation history to localStorage
+  const saveConversationHistory = (storyName: string, sessionId: string, history: Message[]) => {
+    if (typeof window === 'undefined') return
+
+    try {
+      const key = `conversation_${storyName}_${sessionId}`
+      localStorage.setItem(key, JSON.stringify(history))
+      console.log(`Saved conversation history: ${history.length} messages`)
+    } catch (error) {
+      console.error('Error saving conversation history:', error)
     }
   }
 
@@ -176,39 +220,13 @@ export default function StoryPage() {
       }
 
       let sessionToUse: string
-      let shouldStartFresh = false
-      let testResponse: StoryResponse | null = null
+      let existingHistory: Message[] = []
 
       if (existingSessionId) {
         console.log('Found existing session in localStorage:', existingSessionId)
-
-        // Try to continue with existing session first
-        testResponse = await callStoryAPI({
-          sessionId: existingSessionId,
-          storyName: storyName,
-          language: 'français',
-          // Don't include choice - this will be treated as "continue existing story"
-        })
-
-        if (testResponse && testResponse.success) {
-          // Server has the session, we can continue
-          sessionToUse = existingSessionId
-          console.log('Successfully continuing with existing session')
-        } else if (testResponse && testResponse.error && testResponse.shouldRestart) {
-          // Server lost the session, start fresh but keep using the same sessionId
-          console.log('Server lost session, starting fresh with same sessionId')
-          sessionToUse = existingSessionId
-          shouldStartFresh = true
-        } else {
-          // Some other error, create completely new session
-          console.log('Error with existing session, creating new one')
-          if (typeof window !== 'undefined') {
-            sessionToUse = SessionManager.createNewSessionForStory(storyName)
-          } else {
-            sessionToUse = generateSessionId()
-          }
-          shouldStartFresh = true
-        }
+        sessionToUse = existingSessionId
+        // Load conversation history
+        existingHistory = loadConversationHistory(storyName, existingSessionId)
       } else {
         // No existing session, create new one
         console.log('No existing session found, creating new one')
@@ -217,30 +235,31 @@ export default function StoryPage() {
         } else {
           sessionToUse = generateSessionId()
         }
-        shouldStartFresh = true
       }
 
       setSessionId(sessionToUse)
+      setConversationHistory(existingHistory)
 
-      let response: StoryResponse | null
-      if (shouldStartFresh) {
-        // Force a fresh start by making an initialization call
-        response = await callStoryAPI({
-          sessionId: sessionToUse,
-          storyName: storyName,
-          language: 'français',
-          forceRestart: true,
-        })
-      } else {
-        // We already got the response from the test call above, use it
-        response = testResponse
-      }
+      // Make API call with existing conversation history
+      const response = await callStoryAPI({
+        sessionId: sessionToUse,
+        storyName: storyName,
+        language: 'français',
+        conversationHistory: existingHistory,
+        forceRestart: false,
+      })
 
       if (response && response.success) {
         console.log('Story initialization successful')
         setCurrentStepWithLogging(response.currentStep, 'Story initialized successfully')
         setNextSteps(response.nextSteps)
         setIsInitialized(true)
+
+        // Update conversation history from response
+        if (response.conversationHistory) {
+          setConversationHistory(response.conversationHistory)
+          saveConversationHistory(storyName, sessionToUse, response.conversationHistory)
+        }
 
         // Update session data in localStorage
         if (typeof window !== 'undefined') {
@@ -288,9 +307,6 @@ export default function StoryPage() {
       console.log('Calling initializeStory')
       initializeStory()
     }
-
-    // Don't reset the flag in cleanup - this was causing the double execution
-    // The flag should only reset when storyName actually changes
   }, [storyName])
 
   const handleTypingComplete = useCallback(() => {
@@ -308,12 +324,19 @@ export default function StoryPage() {
         choice: choice,
         storyName: storyName,
         language: 'français',
+        conversationHistory: conversationHistory, // Send current conversation history
       })
 
       if (response && response.success) {
         console.log('Next step successful')
         setCurrentStepWithLogging(response.currentStep, `Choice ${choice} processed successfully`)
         setNextSteps(response.nextSteps)
+
+        // Update conversation history from response
+        if (response.conversationHistory) {
+          setConversationHistory(response.conversationHistory)
+          saveConversationHistory(storyName, sessionId, response.conversationHistory)
+        }
 
         // Update session data in localStorage
         if (typeof window !== 'undefined') {
