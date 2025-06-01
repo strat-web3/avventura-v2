@@ -1,16 +1,48 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect } from 'react'
 import { useLanguage } from '@/context/LanguageContext'
-import { Language } from '@/utils/i18n'
+import { Language, detectUserLanguage } from '@/utils/i18n'
 import { IconButton, Menu, MenuButton, MenuList, MenuItem, Text, Flex, Box } from '@chakra-ui/react'
 import { MdLanguage } from 'react-icons/md'
 
 const LanguageSelector: React.FC = () => {
   const { language, setLanguage } = useLanguage()
 
+  // Detect and set browser language on component mount
+  useEffect(() => {
+    try {
+      // Only run on client side and if language hasn't been explicitly set
+      if (typeof window !== 'undefined' && !localStorage.getItem('userLanguageExplicitlySet')) {
+        const detectedLanguage = detectUserLanguage()
+        console.log('Detected browser language:', detectedLanguage)
+
+        // Only change if detected language is different from current
+        if (detectedLanguage !== language) {
+          setLanguage(detectedLanguage)
+          console.log('Language automatically set to:', detectedLanguage)
+        }
+      }
+    } catch (error) {
+      console.error('Error in language detection:', error)
+      // Fallback to French if there's any error
+      if (language !== 'fr') {
+        setLanguage('fr')
+      }
+    }
+  }, [language, setLanguage]) // Include dependencies
+
   const handleLanguageChange = (newLang: Language) => {
-    setLanguage(newLang)
+    try {
+      setLanguage(newLang)
+      // Mark that user has explicitly chosen a language
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('userLanguageExplicitlySet', 'true')
+      }
+      console.log('Language manually changed to:', newLang)
+    } catch (error) {
+      console.error('Error changing language:', error)
+    }
   }
 
   const languageInfo = [
