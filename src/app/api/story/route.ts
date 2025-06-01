@@ -67,7 +67,7 @@ async function callClaude(messages: Message[]): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-4-opus-20250514',
+      model: 'claude-4-sonnet-20250514',
       messages: messages,
       max_tokens: 2000,
       temperature: 0.8,
