@@ -1,82 +1,16 @@
-# INSTRUCTIONS FOR THE ADVENTURE
+# Montpellier Médiéval
 
-## Mandatory Response Format
+## Setting
 
-At each step, provide ONLY a JSON object (nothing else) with this exact model (an array of 4 objects):
+You have been transported to medieval Montpellier, France, during the height of the Middle Ages (around the 12th-13th century). This is when Montpellier was becoming a major center of trade and learning in southern France. The city is bustling with merchants, scholars, and pilgrims. The famous University of Montpellier is already established, particularly renowned for its medical school - one of the oldest in Europe.
 
-```json
-[
-  {
-    "desc": "Description of the current step",
-    "options": [
-      "Option 1",
-      "Option 2", 
-      "Option 3"
-    ]
-  },
-  {
-    "desc": "Possible next step 1",
-    "options": ["Option A", "Option B", "Option C"]
-  },
-  {
-    "desc": "Possible next step 2", 
-    "options": ["Option X", "Option Y", "Option Z"]
-  },
-  {
-    "desc": "Possible next step 3",
-    "options": ["Option 1", "Option 2", "Option 3"]
-  }
-]
-```
+The streets are narrow and winding, filled with the sounds and smells of medieval life. Stone buildings line the pathways, and the Gothic architecture is beginning to flourish. The Mediterranean climate keeps the city pleasant, and its strategic location makes it a crossroads of cultures, where Christian, Jewish, and Islamic influences blend together.
 
-**IMPORTANT:** 
-- Respond ONLY with the JSON, no other text
-- Always exactly 4 objects in the array
-- Each object must have "desc" and "options" with 3 choices
-- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
-- Keep in memory the choices of users: make it so the story don't repeat itself
-- There must be surprises. Be as creative as you can, but keep the scientific correctness
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
-- CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
+## Starting Scene
 
-## Mandatory First Step
+You find yourself teleported to the Place de la Comédie in medieval Montpellier. Around you, merchants shout to sell their wares, horses pull carts, and the smell of warm bread floats through the air. What do you do?
 
-```json
-[
-  {
-    "desc": "Vous voilà télétransporté sur la Place de la Comédie de Montpellier au Moyen Âge. Autour de vous, les marchands crient pour vendre leurs produits, les chevaux tirent des charrettes, et l'odeur du pain chaud flotte dans l'air. Que faites-vous ?",
-    "options": [
-      "Observer ce qui se passe ici",
-      "Se promener dans la vieille ville",
-      "Rester en retrait un moment pour observer"
-    ]
-  },
-  {
-    "desc": "Vous vous approchez des étals colorés et découvrez Jean-Jean, un marchand jovial qui vend de belles pommes rouges. Il vous sourit chaleureusement et vous explique qu'il achète ses fruits aux paysans des environs.",
-    "options": [
-      "Demander à Jean-Jean comment fonctionne le commerce",
-      "Proposer de l'aider à porter ses pommes",
-      "Lui demander de vous faire visiter la ville"
-    ]
-  },
-  {
-    "desc": "Vous explorez les rues pavées de la vieille ville et découvrez des maisons en bois dont les étages supérieurs surplombent la rue. Les artisans travaillent devant leurs ateliers : forgeron, cordonnier, tisserand.",
-    "options": [
-      "Entrer dans l'atelier du forgeron",
-      "Regarder le tisserand travailler",
-      "Continuer vers le château du seigneur"
-    ]
-  },
-  {
-    "desc": "Depuis le bord de la place, vous observez la vie médiévale : des moines en robes brunes se dirigent vers l'abbaye, des nobles à cheval traversent la foule, et des enfants jouent avec des cerceaux en bois.",
-    "options": [
-      "Suivre les moines vers l'abbaye",
-      "Approcher les enfants qui jouent",
-      "Observer les nobles et leur suite"
-    ]
-  }
-]
-```
+The cobblestone square bustles with activity as townsfolk in rough woolen clothing hurry about their daily business. A blacksmith's hammer rings out from a nearby forge, while monks in brown robes walk quietly through the crowd. Market stalls display exotic spices brought by Mediterranean traders, bolts of fine cloth, and fresh produce from the surrounding countryside. The sound of Latin mixed with the local Occitan dialect fills the air, and you notice students carrying scrolls - likely heading to or from the renowned university.
 
 ## Story Context
 

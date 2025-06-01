@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
+import fs from 'fs'
+import path from 'path'
 
 interface StoryRequest {
   sessionId: string
   choice?: number
   storyName: string
   language?: string
+  forceRestart?: boolean
 }
 
 interface StoryStep {
@@ -16,539 +17,295 @@ interface StoryStep {
 }
 
 interface StoryResponse {
+  sessionId?: string
   currentStep: StoryStep
   nextSteps: StoryStep[]
+  success: boolean
+  error?: string
+  shouldRestart?: boolean
 }
 
-// Store conversation history per session
-const conversationHistory = new Map<string, any[]>()
-
-// Request deduplication map - stores active requests and their results
-const activeRequests = new Map<string, Promise<any>>()
-const cachedResponses = new Map<string, any>()
-
-// Generate unique key for each request
-function getRequestKey(sessionId: string, choice?: number): string {
-  return `${sessionId}_${choice || 'first'}`
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
 }
 
-// Helper function to make Anthropic API call with retry
-async function makeAnthropicRequest(requestBody: any, attempt: number = 1): Promise<any> {
-  console.log(`📡 Making request to Anthropic API (attempt ${attempt})...`, {
-    model: requestBody.model,
-    messageCount: requestBody.messages.length,
-  })
+// In-memory session storage (replace with database in production)
+const sessionStorage = new Map<string, Message[]>()
 
+function parseStoryResponse(response: string): { currentStep: StoryStep; nextSteps: StoryStep[] } {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY!,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify(requestBody),
-    })
+    // Remove any markdown code block formatting
+    const cleanResponse = response.replace(/```json\s*|\s*```/g, '').trim()
 
-    console.log(`📡 API Response Details (attempt ${attempt}):`, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: Object.fromEntries(response.headers.entries()),
-      url: response.url,
-    })
+    // Parse the JSON response
+    const parsed = JSON.parse(cleanResponse)
 
-    if (!response.ok) {
-      const errorData = await response.text()
-      console.error(`❌ Anthropic API error details (attempt ${attempt}):`, {
-        status: response.status,
-        statusText: response.statusText,
-        body: errorData.length > 500 ? errorData.substring(0, 500) + '...' : errorData,
-        headers: Object.fromEntries(response.headers.entries()),
-      })
-      throw new Error(
-        `Anthropic API Error ${response.status}: ${response.statusText} - ${errorData}`
-      )
+    // Handle new format: single object with current step
+    if (parsed.desc && Array.isArray(parsed.options)) {
+      // Validate the single step format
+      if (parsed.options.length !== 3) {
+        throw new Error(`Invalid step format: expected 3 options, got ${parsed.options.length}`)
+      }
+
+      // Create current step and empty next steps
+      return {
+        currentStep: {
+          step: 1, // Will be updated based on conversation history
+          desc: parsed.desc,
+          options: parsed.options,
+        },
+        nextSteps: [], // No pre-generated next steps in new format
+      }
     }
 
-    return await response.json()
-  } catch (error) {
-    console.error(`❌ Request failed (attempt ${attempt}):`, error)
-
-    // If this is the first attempt and it failed, wait 1 second and retry
-    if (attempt === 1) {
-      console.log('⏳ Waiting 1 second before retry...')
-      await new Promise(resolve => setTimeout(resolve, 1000))
-      return makeAnthropicRequest(requestBody, 2)
-    }
-
-    // If this is the second attempt and it failed, wait 2 seconds and retry
-    if (attempt === 2) {
-      console.log('⏳ Waiting 2 seconds before final retry...')
-      await new Promise(resolve => setTimeout(resolve, 2000))
-      return makeAnthropicRequest(requestBody, 3)
-    }
-
-    // If third attempt also failed, throw the error
-    throw error
-  }
-}
-
-// Main processing function - returns data object, not NextResponse
-async function processStoryRequest(body: StoryRequest): Promise<any> {
-  const { sessionId, choice, storyName, language = 'fr' } = body
-
-  // Enhanced environment variable checking
-  console.log('🔍 Environment Check:', {
-    hasAnthropicKey: !!process.env.ANTHROPIC_API_KEY,
-    keyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
-    keyPrefix: process.env.ANTHROPIC_API_KEY?.substring(0, 12) + '...',
-    nodeEnv: process.env.NODE_ENV,
-  })
-
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('❌ ANTHROPIC_API_KEY not found in environment')
-    throw new Error('Anthropic API key not configured')
-  }
-
-  if (!process.env.ANTHROPIC_API_KEY.startsWith('sk-ant-')) {
-    console.error('❌ Invalid ANTHROPIC_API_KEY format - should start with sk-ant-')
-    throw new Error('Invalid API key format')
-  }
-
-  // Get or initialize conversation history for this session
-  let messages = conversationHistory.get(sessionId) || []
-
-  let prompt = ''
-
-  if (choice === undefined) {
-    // First step - use the instruction file as-is and start conversation
-    try {
-      const filePath = join(process.cwd(), 'public', `${storyName}.md`)
-      const fileContent = await readFile(filePath, 'utf-8')
-
-      // For the first step, we should return the predefined first step from the instruction file
-      // Extract the mandatory first step from the file
-      const firstStepMatch = fileContent.match(
-        /## Mandatory First Step\s*```json\s*([\s\S]*?)\s*```/
-      )
-
-      if (firstStepMatch) {
-        try {
-          const predefinedFirstStep = JSON.parse(firstStepMatch[1])
-          console.log(`📋 Using predefined first step for: ${storyName}`)
-
-          // Initialize conversation history with the full instructions
-          messages = [
-            {
-              role: 'user',
-              content: fileContent,
-            },
-          ]
-          conversationHistory.set(sessionId, messages)
-
-          // Return the predefined first step structure
-          const [currentStep, ...nextSteps] = predefinedFirstStep
-          return {
-            sessionId,
-            currentStep,
-            nextSteps,
-            success: true,
-          }
-        } catch (parseError) {
-          console.error('❌ Failed to parse predefined first step:', parseError)
-          // Fall back to API generation
+    // Handle old format: array with 4 objects (for backward compatibility)
+    if (Array.isArray(parsed) && parsed.length === 4) {
+      // Validate each step has required properties
+      for (let i = 0; i < parsed.length; i++) {
+        const step = parsed[i]
+        if (!step.desc || !Array.isArray(step.options) || step.options.length !== 3) {
+          throw new Error(`Invalid step ${i}: missing desc or options`)
         }
-      }
-
-      // Fallback: use API if no predefined step found
-      prompt = fileContent
-      console.log(`📋 Loaded story instructions for: ${storyName}`)
-
-      messages = [
-        {
-          role: 'user',
-          content: fileContent,
-        },
-      ]
-    } catch (fileError) {
-      console.log(`⚠️ No instructions file found for ${storyName}`)
-      prompt = `Create a simple interactive story named "${storyName}" in ${language}. Return only JSON array with 4 objects: [{"desc": "text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`
-
-      messages = [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ]
-    }
-  } else {
-    // Continuation - add user choice to conversation history with strong format enforcement
-    const choiceMessage = {
-      role: 'user',
-      content: `User chose option ${choice}. 
-
-CRITICAL: You must continue the ${storyName} story and respond with ONLY a JSON array containing exactly 4 objects. Each object must have "desc" and "options" properties. No other text, no markdown, no explanations.
-
-IMPORTANT: Follow the story structure and character guidelines from the original instructions. Make sure to:
-- Keep the tone appropriate for the target audience
-- Include the main guide characters when appropriate
-- Follow the educational objectives specified in the instructions
-- Ensure story continuity from the user's choice
-- Respond in the same language as the original instructions
-
-Format: [{"desc": "story text", "options": ["option1", "option2", "option3"]}, {"desc": "next story text", "options": ["optionA", "optionB", "optionC"]}, {"desc": "another story text", "options": ["optionX", "optionY", "optionZ"]}, {"desc": "final story text", "options": ["option1", "option2", "option3"]}]
-
-Continue the ${storyName} adventure from where the user made their choice.`,
-    }
-    messages.push(choiceMessage)
-  }
-
-  // Make request to Anthropic API with conversation history and retry logic
-  const requestBody = {
-    model: 'claude-4-opus-20250514',
-    max_tokens: 2000,
-    messages: messages,
-    // Add system message to enforce format consistency and story guidelines
-    system: `You are continuing a story called "${storyName}". You must ALWAYS respond with exactly 4 JSON objects in an array format. Each object must have "desc" and "options" properties. Never respond with markdown, explanations, or any other format.
-
-STORY GUIDELINES:
-- Follow the tone and audience specified in the story instructions
-- Include the main guide characters when appropriate as specified in the instructions
-- Focus on the educational aspects outlined in the story context
-- Ensure story continuity and follow the established narrative structure
-- Respond in the same language as the original instructions
-
-Example format: [{"desc": "story text", "options": ["opt1", "opt2", "opt3"]}, {...}, {...}, {...}]`,
-  }
-
-  const data = await makeAnthropicRequest(requestBody)
-
-  if (!data.content || !Array.isArray(data.content) || data.content.length === 0) {
-    console.error('❌ Invalid API response structure:', {
-      hasContent: !!data.content,
-      isArray: Array.isArray(data.content),
-      length: data.content?.length || 0,
-      dataKeys: Object.keys(data),
-    })
-    throw new Error('Invalid response from AI service')
-  }
-
-  const content = data.content[0].text
-
-  try {
-    // Clean the response - remove markdown code blocks if present
-    let cleanedContent = content.trim()
-
-    // Remove ```json and ``` if present
-    if (cleanedContent.startsWith('```json')) {
-      cleanedContent = cleanedContent.replace(/^```json\s*/, '').replace(/\s*```$/, '')
-    } else if (cleanedContent.startsWith('```')) {
-      cleanedContent = cleanedContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
-    }
-
-    console.log('🧹 Cleaned content preview:', cleanedContent.substring(0, 200) + '...')
-
-    // Parse the JSON response from Claude
-    const storySteps: any[] = JSON.parse(cleanedContent.trim())
-
-    // Validate the response format
-    if (!Array.isArray(storySteps) || storySteps.length !== 4) {
-      console.error('❌ Invalid response format - expected 4 steps, got:', {
-        isArray: Array.isArray(storySteps),
-        length: storySteps.length,
-        firstStep: storySteps[0],
-        content: content.substring(0, 300) + '...',
-      })
-      throw new Error(
-        `Invalid response format from AI - expected 4 steps, got ${storySteps.length}`
-      )
-    }
-
-    // Transform and validate each step to ensure correct format
-    const validatedSteps: StoryStep[] = storySteps.map((step, index) => {
-      // Handle different possible formats from Claude
-      let desc = step.desc
-      let options = step.options
-
-      // If Claude returned the wrong format, try to extract the content
-      if (!desc && step.text) {
-        desc = step.text
-      }
-      if (!desc && step.description) {
-        desc = step.description
-      }
-
-      // If no options found, create default ones based on language
-      if (!options || !Array.isArray(options) || options.length !== 3) {
-        console.warn(`⚠️ Step ${index} has invalid options, using defaults`)
-        const defaultOptions =
-          language === 'fr'
-            ? ["Continuer l'exploration", 'Demander des explications', 'Explorer autre chose']
-            : ['Continue exploring', 'Ask for explanations', 'Explore something else']
-        options = defaultOptions
-      }
-
-      // Ensure we have a description
-      if (!desc || typeof desc !== 'string') {
-        console.warn(`⚠️ Step ${index} has invalid description, using default`)
-        desc =
-          language === 'fr'
-            ? `Une nouvelle aventure vous attend dans ${storyName}.`
-            : `A new adventure awaits you in ${storyName}.`
       }
 
       return {
-        desc,
-        options: options.slice(0, 3), // Ensure exactly 3 options
-      }
-    })
-
-    // Add Claude's response to conversation history
-    messages.push({
-      role: 'assistant',
-      content: content,
-    })
-
-    // Store updated conversation history
-    conversationHistory.set(sessionId, messages)
-
-    // Return the current step and the next possible steps
-    const [currentStep, ...nextSteps] = validatedSteps
-
-    // Log the formatted response
-    console.log('✅ Response generated successfully:', {
-      storyName,
-      sessionId: sessionId.slice(-8),
-      currentStepLength: currentStep.desc.length,
-      optionsCount: currentStep.options.length,
-      nextStepsCount: nextSteps.length,
-    })
-
-    return {
-      sessionId,
-      currentStep,
-      nextSteps,
-      success: true,
-    }
-  } catch (parseError) {
-    console.error('❌ Failed to parse AI response:', {
-      error: parseError instanceof Error ? parseError.message : parseError,
-      contentPreview: content.substring(0, 500),
-      contentLength: content.length,
-      sessionId: sessionId.slice(-8),
-      storyName,
-    })
-
-    // If we get a parsing error, try to recover by sending a correction message
-    if (choice !== undefined) {
-      console.log('🔧 Attempting format correction...')
-
-      // Add a strong correction message
-      const correctionMessage = {
-        role: 'user',
-        content: `ERROR: Your previous response was not valid JSON. You MUST respond with ONLY a JSON array containing exactly 4 objects for the ${storyName} story. No markdown, no other text, no explanations.
-
-REQUIRED FORMAT:
-[
-  {"desc": "Description for current step in ${storyName}", "options": ["Option 1", "Option 2", "Option 3"]},
-  {"desc": "Description for next step in ${storyName}", "options": ["Option A", "Option B", "Option C"]},
-  {"desc": "Description for another step in ${storyName}", "options": ["Option X", "Option Y", "Option Z"]},
-  {"desc": "Description for final step in ${storyName}", "options": ["Option 1", "Option 2", "Option 3"]}
-]
-
-Continue the ${storyName} adventure where user chose option ${choice}.`,
-      }
-
-      messages.push(correctionMessage)
-      conversationHistory.set(sessionId, messages)
-
-      // Try one more time with correction (also with retry)
-      try {
-        console.log('🔧 Making correction request...')
-        const retryData = await makeAnthropicRequest({
-          model: 'claude-4-sonnet-20250514',
-          max_tokens: 2000,
-          messages: messages,
-        })
-
-        console.log('🔧 Correction response received')
-
-        if (retryData.content && retryData.content[0]) {
-          const retryContent = retryData.content[0].text.trim()
-
-          // Clean retry content
-          let cleanedRetryContent = retryContent
-          if (cleanedRetryContent.startsWith('```json')) {
-            cleanedRetryContent = cleanedRetryContent
-              .replace(/^```json\s*/, '')
-              .replace(/\s*```$/, '')
-          } else if (cleanedRetryContent.startsWith('```')) {
-            cleanedRetryContent = cleanedRetryContent.replace(/^```\s*/, '').replace(/\s*```$/, '')
-          }
-
-          try {
-            const retrySteps = JSON.parse(cleanedRetryContent)
-            if (Array.isArray(retrySteps) && retrySteps.length === 4) {
-              console.log('✅ Format correction successful!')
-
-              // Validate and process the corrected response
-              const validatedRetrySteps: StoryStep[] = retrySteps.map((step, index) => ({
-                desc: step.desc || `Continuing ${storyName} adventure...`,
-                options:
-                  Array.isArray(step.options) && step.options.length === 3
-                    ? step.options
-                    : ['Continue', 'Explore', 'Ask questions'],
-              }))
-
-              // Add corrected response to history
-              messages.push({
-                role: 'assistant',
-                content: retryContent,
-              })
-              conversationHistory.set(sessionId, messages)
-
-              const [currentStep, ...nextSteps] = validatedRetrySteps
-              return {
-                sessionId,
-                currentStep,
-                nextSteps,
-                success: true,
-              }
-            }
-          } catch (retryParseError) {
-            console.error('❌ Retry also failed to parse:', retryParseError)
-          }
-        }
-      } catch (retryError) {
-        console.error('❌ Retry request failed:', retryError)
+        currentStep: { ...parsed[0], step: 1 },
+        nextSteps: parsed.slice(1).map((step, index) => ({ ...step, step: index + 2 })),
       }
     }
 
-    // Return a fallback response based on language
-    const fallbackDesc =
-      language === 'fr'
-        ? "Une erreur est survenue dans l'aventure. Voulez-vous recommencer?"
-        : 'An error occurred in the adventure. Would you like to restart?'
-
-    const fallbackOptions =
-      language === 'fr'
-        ? ["Recommencer l'aventure", "Continuer malgré l'erreur", "Quitter l'aventure"]
-        : ['Restart the adventure', 'Continue despite the error', 'Exit the adventure']
-
-    return {
-      sessionId,
-      currentStep: {
-        desc: fallbackDesc,
-        options: fallbackOptions,
-      },
-      nextSteps: [],
-      success: false,
-    }
+    throw new Error(
+      'Invalid response format: expected either single object with desc/options or array with 4 objects'
+    )
+  } catch (error) {
+    console.error('Error parsing story response:', error)
+    console.error('Raw response:', response)
+    throw new Error('Failed to parse story response')
   }
+}
+
+async function callClaude(messages: Message[]): Promise<string> {
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+
+  if (!anthropicApiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured')
+  }
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicApiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-4-opus-20250514',
+      messages: messages,
+      max_tokens: 2000,
+      temperature: 0.8,
+    }),
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Claude API Error:', response.status, errorText)
+    throw new Error(`Claude API error: ${response.status}`)
+  }
+
+  const data = await response.json()
+  return data.content[0].text
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: StoryRequest = await request.json()
-    const { sessionId, choice, storyName, language = 'fr' } = body
+    const { sessionId, choice, storyName, language = 'français', forceRestart = false } = body
 
-    const requestKey = getRequestKey(sessionId, choice)
+    console.log('Story API Request:', { sessionId, choice, storyName, language, forceRestart })
 
-    console.log('📨 Story API Request:', {
-      storyName,
-      choice: choice || 'initial',
-      sessionId: sessionId.slice(-8),
-      language,
-      timestamp: new Date().toISOString(),
-    })
-
-    // Check if we have a cached response for this exact request
-    if (cachedResponses.has(requestKey)) {
-      console.log(
-        `🔄 Returning cached response: ${storyName} | Choice: ${choice || 'first'} | Session: ${sessionId.slice(-8)}`
+    if (!sessionId || !storyName) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Missing required parameters: sessionId and storyName',
+        },
+        { status: 400 }
       )
-      const cachedResult = cachedResponses.get(requestKey)
-      return NextResponse.json(cachedResult)
     }
-
-    // Check if the same request is already in progress
-    if (activeRequests.has(requestKey)) {
-      console.log(
-        `🔄 Deduplicating request: ${storyName} | Choice: ${choice || 'first'} | Session: ${sessionId.slice(-8)}`
-      )
-      const result = await activeRequests.get(requestKey)
-      return NextResponse.json(result)
-    }
-
-    // Create and store the request promise
-    const requestPromise = processStoryRequest(body)
-    activeRequests.set(requestKey, requestPromise)
 
     try {
-      const result = await requestPromise
+      // Handle force restart
+      if (forceRestart) {
+        console.log(`Force restarting session: ${sessionId} for story: ${storyName}`)
+        sessionStorage.delete(sessionId)
+      }
 
-      // Cache the result data (not the Response object)
-      cachedResponses.set(requestKey, result)
+      // Get or create conversation history
+      let history = sessionStorage.get(sessionId) || []
 
-      console.log('✅ Request completed successfully:', {
-        storyName,
-        choice: choice || 'initial',
-        sessionId: sessionId.slice(-8),
-        success: result.success,
+      if (history.length === 0) {
+        console.log(`Initialized new server session: ${sessionId} for story: ${storyName}`)
+
+        // Read the story file from public folder
+        const storyFilePath = path.join(process.cwd(), 'public', `${storyName}.md`)
+
+        if (!fs.existsSync(storyFilePath)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Story '${storyName}' not found`,
+            },
+            { status: 404 }
+          )
+        }
+
+        const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
+
+        // Standard instructions for all stories (put in first prompt)
+        const standardInstructions = `# INSTRUCTIONS FOR THE ADVENTURE
+
+## Mandatory Response Format
+
+At each step, provide ONLY a JSON object (nothing else) with this exact model:
+
+\`\`\`json
+{
+    "desc": "Description of the current step",
+    "options": [
+      "Option 1",
+      "Option 2", 
+      "Option 3"
+    ]
+}
+\`\`\`
+
+**IMPORTANT:** 
+- Respond ONLY with the JSON, no other text
+- Respond in the language: ${language}
+- Keep in memory the choices of users: make it so the story don't repeat itself
+- There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
+- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
+- CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
+
+## Story Content:
+
+${storyContent}`
+
+        // Create the first prompt content
+        const firstPromptContent = forceRestart
+          ? `Please start a new adventure based on this story. Begin from the very first step.\n\n${standardInstructions}`
+          : `Please start this adventure story from the beginning.\n\n${standardInstructions}`
+
+        // Log the full first prompt for debugging
+        console.log('=== FIRST PROMPT CONTENT ===')
+        console.log(firstPromptContent)
+        console.log('=== END FIRST PROMPT ===')
+
+        // Initialize conversation with story content
+        history.push({
+          role: 'user',
+          content: firstPromptContent,
+        })
+
+        console.log(
+          forceRestart
+            ? `Starting restarted story: ${storyName} for session: ${sessionId}`
+            : `Starting new story: ${storyName} for session: ${sessionId}`
+        )
+      } else if (choice !== undefined) {
+        // Add user choice to conversation
+        history.push({
+          role: 'user',
+          content: `I choose option ${choice}. Please continue the story and provide the next step following the format instructions.`,
+        })
+
+        console.log(`User selected choice ${choice} for session: ${sessionId}`)
+      } else {
+        // Just continuing existing story without a choice (e.g., page refresh)
+        console.log(`Continuing existing story for session: ${sessionId}`)
+      }
+
+      // Call Claude API
+      const claudeResponse = await callClaude(history)
+      console.log('Claude response received')
+
+      // Add Claude's response to history
+      history.push({
+        role: 'assistant',
+        content: claudeResponse,
       })
 
-      return NextResponse.json(result)
-    } finally {
-      // Clean up the active request when done
-      activeRequests.delete(requestKey)
+      // Update session storage
+      sessionStorage.set(sessionId, history)
 
-      // Clean up cache after 30 seconds to prevent memory leaks
-      setTimeout(() => {
-        cachedResponses.delete(requestKey)
-      }, 30000)
+      // Parse the response
+      const parsedResponse = parseStoryResponse(claudeResponse)
+
+      // Calculate current step number based on conversation history
+      const userChoices = history.filter(
+        msg => msg.role === 'user' && msg.content.includes('I choose option')
+      ).length
+      const currentStepNumber = userChoices + 1
+
+      const result: StoryResponse = {
+        sessionId,
+        currentStep: {
+          ...parsedResponse.currentStep,
+          step: currentStepNumber,
+        },
+        nextSteps: parsedResponse.nextSteps,
+        success: true,
+      }
+
+      console.log('Story API Response:', {
+        sessionId,
+        currentStep: result.currentStep.step,
+        success: true,
+      })
+      return NextResponse.json(result)
+    } catch (error) {
+      console.error('Error in story processing:', error)
+
+      // If the session might be corrupted, suggest restart
+      if (error instanceof Error && error.message.includes('parse')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to parse story response',
+            shouldRestart: true,
+          },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
+        { status: 500 }
+      )
     }
   } catch (error) {
-    console.error('❌ Story API Error:', {
-      error: error instanceof Error ? error.message : error,
-      stack: error instanceof Error ? error.stack : undefined,
-      timestamp: new Date().toISOString(),
-    })
-
+    console.error('Error parsing request body:', error)
     return NextResponse.json(
       {
-        error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
-        timestamp: new Date().toISOString(),
+        success: false,
+        error: 'Invalid request format',
       },
-      { status: 500 }
+      { status: 400 }
     )
   }
 }
 
+// Health check endpoint
 export async function GET() {
-  // Test endpoint to verify API is working
-  const hasApiKey = !!process.env.ANTHROPIC_API_KEY
-  const isValidKey = process.env.ANTHROPIC_API_KEY?.startsWith('sk-ant-') || false
+  const sessionCount = sessionStorage.size
 
   return NextResponse.json({
-    message: 'Story API is running',
-    hasApiKey,
-    isValidKey,
-    keyLength: process.env.ANTHROPIC_API_KEY?.length || 0,
-    activeRequests: activeRequests.size,
-    conversationSessions: conversationHistory.size,
+    status: 'healthy',
+    sessions: sessionCount,
     timestamp: new Date().toISOString(),
   })
 }
-
-// Clean up old conversation histories periodically (optional)
-setInterval(() => {
-  // Keep only the most recent 100 sessions to prevent memory leaks
-  if (conversationHistory.size > 100) {
-    const entries = Array.from(conversationHistory.entries())
-    const toKeep = entries.slice(-100)
-    conversationHistory.clear()
-    toKeep.forEach(([key, value]) => conversationHistory.set(key, value))
-    console.log('🧹 Cleaned up old conversation histories')
-  }
-}, 300000) // Every 5 minutes

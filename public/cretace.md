@@ -1,58 +1,16 @@
-# INSTRUCTIONS FOR THE ADVENTURE
+# Crétacé
 
-## Mandatory Response Format
+## Setting
 
-At each step, provide ONLY a JSON object (nothing else) with this exact model (an array of 4 objects):
+You have been teleported to the Late Cretaceous period, approximately 70 million years ago. This is a world dominated by dinosaurs, where massive predators and gentle giants roam the Earth. The climate is warm and humid, with no ice caps at the poles. Vast shallow seas cover much of what will become modern continents, and flowering plants are just beginning to diversify across the landscape.
 
-```json
-[
-  {
-    "desc": "Description of the current step",
-    "options": [
-      "Option 1",
-      "Option 2", 
-      "Option 3"
-    ]
-  },
-  {
-    "desc": "Possible next step 1",
-    "options": ["Option A", "Option B", "Option C"]
-  },
-  {
-    "desc": "Possible next step 2", 
-    "options": ["Option X", "Option Y", "Option Z"]
-  },
-  {
-    "desc": "Possible next step 3",
-    "options": ["Option 1", "Option 2", "Option 3"]
-  }
-]
-```
+Professor Juju, your scientific guide and companion, accompanies you on this prehistoric adventure. Together, you'll navigate this ancient world filled with towering dinosaurs, primitive mammals, and landscapes unlike anything in the modern world.
 
-**IMPORTANT:** 
-- Respond ONLY with the JSON, no other text
-- Always exactly 4 objects in the array
-- Each object must have "desc" and "options" with 3 choices
-- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
-- Keep in memory the choices of users: make it so the story don't repeat itself
-- There must be surprises. Be as creative as you can, but keep the scientific correctness
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
-- CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
+## Starting Scene
 
-## Mandatory First Step
+You find yourself teleported to the Late Cretaceous era. Professor Juju accompanies you on this adventure. You stand at the edge of a warm, shallow sea.
 
-```json
-[
-  {
-    "desc": "Vous voilà télétransporté dans l'ère du crétacé supérieur. Le professeur Juju vous accompagne dans l'aventure. Vous êtes au bord d'une mer chaude et peu profonde.",
-    "options": [
-      "On observe les alentours",
-      "On s'engage sur une petite barque",
-      "On embarque à bord d'un drôle de sous-marin"
-    ]
-  }
-]
-```
+The crystal-clear water laps gently at your feet, and you can see strange marine reptiles moving in the depths. Massive ferns and primitive flowering plants line the shore, while in the distance, you hear the calls of creatures that no human ear has heard for millions of years. The air is thick and humid, filled with unfamiliar scents of ancient vegetation and the salt spray of the prehistoric ocean.
 
 ## Story Context
 
@@ -76,93 +34,9 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model (a
 - Don't invent other human characters: there's only professor Juju and the user.
 - Make sure we encounter pectinids during the adventure.
 
----
+## Additional context
 
-## Educational Objectives and Scientific Context
-
-### The Upper Cretaceous in Normandy
-
-**80-100 million years ago:**
-- The Fécamp region was covered by a warm, shallow sea
-- Global tropical climate (10°C warmer than today)
-- No ice caps
-- Epicontinental sea covering much of Europe
-
-**Main Marine Creatures:**
-- **Mosasaurs** (Tylosaurus): giant marine reptiles up to 15m long
-- **Plesiosaurs**: long-necked marine reptiles
-- **Ichthyosaurs**: marine reptiles resembling dolphins
-- **Pterosaurs**: giant flying reptiles
-- **Pectinids**: ancestors of scallops
-- **Ammonites**: mollusks with spiral shells
-- **Giant sharks** (Cretoxyrhina)
-
-**Marine Environment:**
-- White chalk seafloor (calcareous micro-organisms)
-- Rudist reefs (giant bivalve mollusks)
-- Plankton-rich waters
-- Primitive marine vegetation
-
-**Fossil Formation:**
-1. Animal dies in the warm sea
-2. Shell falls to the bottom
-3. Covered by "marine snow" of calcareous micro-organisms
-4. Sediments compact into chalk over millions of years
-5. Tectonic movements lift the seafloor
-6. Erosion creates present-day cliffs
-7. Fossils end up on beaches
-
-### Examples of Educational Discoveries
-
-**The Pectinid Fossil:**
-- Family Pectinidae (scallops)
-- Age: 65-100 million years
-- Found embedded in chalk = proof of its age
-- Could "swim" by clapping its valves to escape predators
-- Filtered plankton for food
-
-**Other Possible Learning:**
-- Why mosasaurs were super-predators
-- How pterosaurs fished
-- Why there were no corals but rudists instead
-- How ammonites moved by jet propulsion
-- Why the climate was so warm
-
----
-
-**FINAL REMINDER:** Always respond with the exact JSON format adapted for an 8-year-old child, scientifically correct, with Professor Juju as the benevolent guide.
-
-## Additional Context
-
-Get inspired from the following context to build the story.
-
-# Placard
-
-PECTINID FOSSIL (UPPER CRETACEOUS)  
-Marine Bivalve - Family Pectinidae  
-Approximate age: 65-100 million years
-
-Specimen discovered on Fécamp beach at rue Herbeuse level  
-Discovery date: May 9, 2025  
-
-This prehistoric scallop fossil comes from the chalk cliffs characteristic of the Alabaster Coast. During the Upper Cretaceous period, this region was covered by a warm, shallow sea where these filter-feeding mollusks lived alongside mosasaurs, plesiosaurs, and other marine creatures now extinct.
-
-# Questions
-
-* What tells us this is a real fossil?   
-  * Embedded in stone → so it can't be recent → so it's indeed a fossil  
-* How did this fossil end up on this beach?   
-  * About 100 million years ago, this pectinid lived in a warm, shallow sea.  
-  * When the mollusk died, its shell fell to the bottom of the water. It was covered by marine snow of calcareous micro-organisms that accumulated, compacted, and transformed into chalk.   
-  * Millions of years later, tectonic movements lifted these ancient seafloors to form the cliffs we see today.   
-  * Erosion (rain, wind, storms, etc.) sculpts the cliffs.  
-  * The fossil breaks away from the cliff and ends up on the beach.  
-* How did the pectinid live?   
-* What other animals and plants lived at this time? 
-
----
-
-# The Lost World of Cretaceous Normandy
+### The Lost World of Cretaceous Normandy
 
 Imagine yourself, on a warm summer day, about 80 million years ago, floating above what would one day become the Fécamp region. The landscape would be unrecognizable to your contemporary eyes.
 
@@ -172,7 +46,7 @@ The sky above this primitive Norman sea is crisscrossed by flying reptiles – p
 
 In the air, the first true birds have already appeared, though they are still relatively primitive compared to their modern descendants. These *Ichthyornis* and *Hesperornis*, vaguely resembling modern gulls and loons but still equipped with teeth, share the sky with their pterosaur cousins.
 
-## The Marine Depths
+### The Marine Depths
 
 Beneath the surface of this warm, crystalline sea, life abounds. The waters teem with creatures now extinct, as well as more familiar forms but in ancestral versions. Bony and cartilaginous fish swim in dense schools, pursued by impressive marine predators.
 
