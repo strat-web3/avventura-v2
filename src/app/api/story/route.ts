@@ -59,25 +59,7 @@ function parseStoryResponse(response: string): { currentStep: StoryStep; nextSte
       }
     }
 
-    // Handle old format: array with 4 objects (for backward compatibility)
-    if (Array.isArray(parsed) && parsed.length === 4) {
-      // Validate each step has required properties
-      for (let i = 0; i < parsed.length; i++) {
-        const step = parsed[i]
-        if (!step.desc || !Array.isArray(step.options) || step.options.length !== 3) {
-          throw new Error(`Invalid step ${i}: missing desc or options`)
-        }
-      }
-
-      return {
-        currentStep: { ...parsed[0], step: 1 },
-        nextSteps: parsed.slice(1).map((step, index) => ({ ...step, step: index + 2 })),
-      }
-    }
-
-    throw new Error(
-      'Invalid response format: expected either single object with desc/options or array with 4 objects'
-    )
+    throw new Error('Invalid response format: expected object with desc/options')
   } catch (error) {
     console.error('Error parsing story response:', error)
     console.error('Raw response:', response)
@@ -92,7 +74,6 @@ async function callClaude(messages: Message[]): Promise<string> {
     throw new Error('ANTHROPIC_API_KEY is not configured')
   }
 
-  // ========== NEW LOGGING SECTION ==========
   console.log('\n=== CLAUDE API CALL ===')
   console.log('🔵 Request Details:')
   console.log(`📊 Number of messages: ${messages.length}`)
@@ -100,18 +81,22 @@ async function callClaude(messages: Message[]): Promise<string> {
   console.log(`🌡️ Temperature: 0.8`)
   console.log(`📝 Max tokens: 2000`)
 
-  console.log('\n📜 FULL CONVERSATION HISTORY:')
-  messages.forEach((message, index) => {
-    console.log(`\n--- Message ${index + 1} (${message.role.toUpperCase()}) ---`)
+  // Only log the last few messages to avoid spam
+  const messagesToLog = messages.length > 4 ? messages.slice(-2) : messages
+  console.log('\n📜 RECENT CONVERSATION:')
+  messagesToLog.forEach((message, index) => {
+    const actualIndex = messages.length > 4 ? messages.length - 2 + index : index
+    console.log(`\n--- Message ${actualIndex + 1} (${message.role.toUpperCase()}) ---`)
     console.log(`📏 Length: ${message.content.length} characters`)
-    console.log(`📄 Content:`)
-    console.log(message.content)
-    console.log(`--- End Message ${index + 1} ---`)
+    if (message.content.length < 200) {
+      console.log(`📄 Content: ${message.content}`)
+    } else {
+      console.log(`📄 Content: ${message.content.substring(0, 100)}... [truncated]`)
+    }
   })
 
   console.log('\n🚀 Sending request to Claude API...')
   const startTime = Date.now()
-  // ========== END LOGGING SECTION ==========
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -140,16 +125,51 @@ async function callClaude(messages: Message[]): Promise<string> {
   const data = await response.json()
   const claudeResponse = data.content[0].text
 
-  // ========== MORE LOGGING ==========
   console.log('\n✅ Claude API Response Received:')
   console.log(`⏱️ Duration: ${duration}ms`)
   console.log(`📏 Response length: ${claudeResponse.length} characters`)
   console.log(`📄 Claude's response:`)
   console.log(claudeResponse)
   console.log('\n=== END CLAUDE API CALL ===\n')
-  // ========== END MORE LOGGING ==========
 
   return claudeResponse
+}
+
+function createInitialSystemMessage(storyContent: string, language: string): string {
+  return `# INSTRUCTIONS FOR THE ADVENTURE
+
+## Mandatory Response Format
+
+At each step, provide ONLY a JSON object (nothing else) with this exact model:
+
+\`\`\`json
+{
+    "desc": "Description of the current step",
+    "options": [
+      "Option 1",
+      "Option 2", 
+      "Option 3"
+    ]
+}
+\`\`\`
+
+**IMPORTANT:** 
+- Respond ONLY with the JSON, no other text
+- Respond in the language: ${language}
+- Keep in memory the choices of users: make it so the story don't repeat itself
+- There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
+- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
+- CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
+
+## Story Content:
+
+${storyContent}
+
+## User Communication Protocol
+
+After this initial setup, the user will communicate with you using only simple choice messages like "Choice 1", "Choice 2", or "Choice 3". You should interpret these as the user selecting that numbered option from your previous response and continue the story accordingly.
+
+Now please start this adventure story from the beginning.`
 }
 
 export async function POST(request: NextRequest) {
@@ -197,45 +217,13 @@ export async function POST(request: NextRequest) {
 
         const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
 
-        // Standard instructions for all stories (put in first prompt)
-        const standardInstructions = `# INSTRUCTIONS FOR THE ADVENTURE
-
-## Mandatory Response Format
-
-At each step, provide ONLY a JSON object (nothing else) with this exact model:
-
-\`\`\`json
-{
-    "desc": "Description of the current step",
-    "options": [
-      "Option 1",
-      "Option 2", 
-      "Option 3"
-    ]
-}
-\`\`\`
-
-**IMPORTANT:** 
-- Respond ONLY with the JSON, no other text
-- Respond in the language: ${language}
-- Keep in memory the choices of users: make it so the story don't repeat itself
-- There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
-- CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
-
-## Story Content:
-
-${storyContent}`
-
-        // Create the first prompt content
-        const firstPromptContent = forceRestart
-          ? `Please start a new adventure based on this story. Begin from the very first step.\n\n${standardInstructions}`
-          : `Please start this adventure story from the beginning.\n\n${standardInstructions}`
+        // Create the comprehensive initial message
+        const initialMessage = createInitialSystemMessage(storyContent, language)
 
         // Initialize conversation with story content
         history.push({
           role: 'user',
-          content: firstPromptContent,
+          content: initialMessage,
         })
 
         console.log(
@@ -244,8 +232,8 @@ ${storyContent}`
             : `🎬 Starting new story: ${storyName} for session: ${sessionId}`
         )
       } else if (choice !== undefined) {
-        // Add user choice to conversation
-        const choiceMessage = `I choose option ${choice}. Please continue the story and provide the next step following the format instructions.`
+        // Add user choice to conversation - use simple format as per protocol
+        const choiceMessage = `Choice ${choice}`
 
         history.push({
           role: 'user',
@@ -257,6 +245,39 @@ ${storyContent}`
       } else {
         // Just continuing existing story without a choice (e.g., page refresh)
         console.log(`🔄 Continuing existing story for session: ${sessionId}`)
+
+        // If we have a conversation but no new choice, and the last message was from the user,
+        // we need to get Claude's response. If the last message was from Claude, we can return it.
+        if (history.length > 0 && history[history.length - 1].role === 'assistant') {
+          // We have Claude's last response, parse and return it
+          const lastResponse = history[history.length - 1].content
+          console.log('📋 Returning cached Claude response')
+
+          try {
+            const parsedResponse = parseStoryResponse(lastResponse)
+
+            // Calculate current step number based on conversation history
+            const userChoices = history.filter(
+              msg => msg.role === 'user' && msg.content.startsWith('Choice ')
+            ).length
+            const currentStepNumber = userChoices + 1
+
+            const result: StoryResponse = {
+              sessionId,
+              currentStep: {
+                ...parsedResponse.currentStep,
+                step: currentStepNumber,
+              },
+              nextSteps: parsedResponse.nextSteps,
+              success: true,
+            }
+
+            return NextResponse.json(result)
+          } catch (error) {
+            console.error('❌ Error parsing cached response:', error)
+            // Fall through to make a new API call
+          }
+        }
       }
 
       console.log(`📊 Current conversation history length: ${history.length} messages`)
@@ -282,7 +303,7 @@ ${storyContent}`
 
       // Calculate current step number based on conversation history
       const userChoices = history.filter(
-        msg => msg.role === 'user' && msg.content.includes('I choose option')
+        msg => msg.role === 'user' && msg.content.startsWith('Choice ')
       ).length
       const currentStepNumber = userChoices + 1
 
