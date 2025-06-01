@@ -58,6 +58,7 @@ async function callClaude(messages: Message[]): Promise<string> {
   }
 
   console.log('🚀 Calling Claude API with', messages.length, 'messages')
+  console.log('messages content', messages)
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -67,9 +68,9 @@ async function callClaude(messages: Message[]): Promise<string> {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-4-sonnet-20250514',
+      model: 'claude-3-5-haiku-20241022',
       messages: messages,
-      max_tokens: 2000,
+      max_tokens: 1200,
       temperature: 0.8,
     }),
   })
