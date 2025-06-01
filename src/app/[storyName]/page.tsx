@@ -8,6 +8,15 @@ import Link from 'next/link'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
+import { SessionManager } from '@/app/utils/sessionStorage'
+
+interface StoryRequest {
+  sessionId: string
+  choice?: number
+  storyName: string
+  language?: string
+  forceRestart?: boolean
+}
 
 interface StoryStep {
   step?: number
@@ -16,11 +25,12 @@ interface StoryStep {
 }
 
 interface StoryResponse {
-  sessionId: string
+  sessionId?: string
   currentStep: StoryStep
   nextSteps: StoryStep[]
   success: boolean
   error?: string
+  shouldRestart?: boolean
 }
 
 const TypingText = styled.div`
@@ -117,12 +127,8 @@ export default function StoryPage() {
     setIsLoading(value)
   }
 
-  const callStoryAPI = async (requestData: {
-    sessionId: string
-    choice?: number
-    storyName: string
-    language?: string
-  }): Promise<StoryResponse | null> => {
+  // Single, properly typed callStoryAPI function
+  const callStoryAPI = async (requestData: StoryRequest): Promise<StoryResponse | null> => {
     try {
       console.log('Calling story API with data:', requestData)
 
@@ -157,26 +163,93 @@ export default function StoryPage() {
     }
   }
 
+  // Updated initializeStory function
   const initializeStory = async () => {
     console.log('Initializing story for:', storyName)
     setIsLoadingWithLogging(true, 'Story initialization started')
 
     try {
-      const newSessionId = generateSessionId()
-      console.log('Generated session ID:', newSessionId)
-      setSessionId(newSessionId)
+      // Try to load existing session from localStorage
+      let existingSessionId: string | null = null
+      if (typeof window !== 'undefined') {
+        existingSessionId = SessionManager.getSessionForStory(storyName)
+      }
 
-      const response = await callStoryAPI({
-        sessionId: newSessionId,
-        storyName: storyName,
-        language: 'français',
-      })
+      let sessionToUse: string
+      let shouldStartFresh = false
+      let testResponse: StoryResponse | null = null
+
+      if (existingSessionId) {
+        console.log('Found existing session in localStorage:', existingSessionId)
+
+        // Try to continue with existing session first
+        testResponse = await callStoryAPI({
+          sessionId: existingSessionId,
+          storyName: storyName,
+          language: 'français',
+          // Don't include choice - this will be treated as "continue existing story"
+        })
+
+        if (testResponse && testResponse.success) {
+          // Server has the session, we can continue
+          sessionToUse = existingSessionId
+          console.log('Successfully continuing with existing session')
+        } else if (testResponse && testResponse.error && testResponse.shouldRestart) {
+          // Server lost the session, start fresh but keep using the same sessionId
+          console.log('Server lost session, starting fresh with same sessionId')
+          sessionToUse = existingSessionId
+          shouldStartFresh = true
+        } else {
+          // Some other error, create completely new session
+          console.log('Error with existing session, creating new one')
+          if (typeof window !== 'undefined') {
+            sessionToUse = SessionManager.createNewSessionForStory(storyName)
+          } else {
+            sessionToUse = generateSessionId()
+          }
+          shouldStartFresh = true
+        }
+      } else {
+        // No existing session, create new one
+        console.log('No existing session found, creating new one')
+        if (typeof window !== 'undefined') {
+          sessionToUse = SessionManager.createNewSessionForStory(storyName)
+        } else {
+          sessionToUse = generateSessionId()
+        }
+        shouldStartFresh = true
+      }
+
+      setSessionId(sessionToUse)
+
+      let response: StoryResponse | null
+      if (shouldStartFresh) {
+        // Force a fresh start by making an initialization call
+        response = await callStoryAPI({
+          sessionId: sessionToUse,
+          storyName: storyName,
+          language: 'français',
+          forceRestart: true,
+        })
+      } else {
+        // We already got the response from the test call above, use it
+        response = testResponse
+      }
 
       if (response && response.success) {
         console.log('Story initialization successful')
         setCurrentStepWithLogging(response.currentStep, 'Story initialized successfully')
         setNextSteps(response.nextSteps)
         setIsInitialized(true)
+
+        // Update session data in localStorage
+        if (typeof window !== 'undefined') {
+          SessionManager.storeSessionData(sessionToUse, {
+            sessionId: sessionToUse,
+            storyName: storyName,
+            currentStep: response.currentStep.step || 1,
+          })
+        }
       } else if (response) {
         console.error('Story initialization failed:', response?.error || 'Unknown error')
         toast({
@@ -241,6 +314,15 @@ export default function StoryPage() {
         console.log('Next step successful')
         setCurrentStepWithLogging(response.currentStep, `Choice ${choice} processed successfully`)
         setNextSteps(response.nextSteps)
+
+        // Update session data in localStorage
+        if (typeof window !== 'undefined') {
+          SessionManager.storeSessionData(sessionId, {
+            sessionId: sessionId,
+            storyName: storyName,
+            currentStep: response.currentStep.step || 1,
+          })
+        }
       } else {
         console.error('Next step failed:', response?.error || 'Unknown error')
         toast({

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation' // Use next/navigation for App Router
 import { Box, Grid, VStack, Text, Button, useColorModeValue } from '@chakra-ui/react'
 import { FaArrowRight } from 'react-icons/fa'
+import { SessionManager } from '@/app/utils/sessionStorage'
 
 interface Story {
   name: string
@@ -75,7 +76,24 @@ const StoriesGrid: React.FC = () => {
   ]
 
   const handleStorySelect = (storySlug: string): void => {
-    router.push(`/${storySlug}`)
+    console.log(`Starting new adventure: ${storySlug}`)
+
+    try {
+      // Clear any existing session for this story first
+      SessionManager.clearSessionForStory(storySlug)
+      console.log(`Cleared existing session for story: ${storySlug}`)
+
+      // Create a brand new session for this story
+      const newSessionId = SessionManager.createNewSessionForStory(storySlug)
+      console.log(`Created new session for story ${storySlug}:`, newSessionId)
+
+      // Navigate to the story page
+      router.push(`/${storySlug}`)
+    } catch (error) {
+      console.error('Error creating new session:', error)
+      // Fallback: just navigate to the story page
+      router.push(`/${storySlug}`)
+    }
   }
 
   return (
