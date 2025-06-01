@@ -1,82 +1,10 @@
-# INSTRUCTIONS FOR THE ADVENTURE
+# Kingston Town 1957 - Musical Adventure
 
-## Mandatory Response Format
+## Setting
+Jamaica, 1957. The ska and rocksteady scenes are emerging. You're a young musician arriving in Kingston to be part of this revolutionary musical movement.
 
-At each step, provide ONLY a JSON object (nothing else) with this exact model (an array of 4 objects):
-
-```json
-[
-  {
-    "desc": "Description of the current step",
-    "options": [
-      "Option 1",
-      "Option 2", 
-      "Option 3"
-    ]
-  },
-  {
-    "desc": "Possible next step 1",
-    "options": ["Option A", "Option B", "Option C"]
-  },
-  {
-    "desc": "Possible next step 2", 
-    "options": ["Option X", "Option Y", "Option Z"]
-  },
-  {
-    "desc": "Possible next step 3",
-    "options": ["Option 1", "Option 2", "Option 3"]
-  }
-]
-```
-
-**IMPORTANT:** 
-- Respond ONLY with the JSON, no other text
-- Always exactly 4 objects in the array
-- Each object must have "desc" and "options" with 3 choices
-- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
-- Keep in memory the choices of users: make it so the story don't repeat itself
-- There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
-- CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
-
-## Mandatory First Step
-
-```json
-[
-  {
-    "desc": "You step off the plane at Kingston's Palisadoes Airport, the humid Caribbean air immediately enveloping you like a warm embrace. The year is 1957, and Jamaica pulses with a musical energy you've never felt before. Palm trees sway in the trade winds, and you can hear the distant sound of drums and horns drifting from the city. Your worn suitcase contains little more than clothes and a pair of drumsticks - your ticket to a new life in this vibrant island.",
-    "options": [
-      "Head straight to downtown Kingston to find the music scene",
-      "Look for affordable lodging near the waterfront first",
-      "Strike up a conversation with local musicians at the airport"
-    ]
-  },
-  {
-    "desc": "You make your way toward downtown Kingston, following the rhythm that seems to emanate from every street corner. The bustling city reveals a fascinating blend of Caribbean culture and emerging musical innovation. Street vendors call out in melodic patois, and you notice groups of young musicians gathering with guitars, bass, and makeshift percussion, creating sounds you've never heard before.",
-    "options": [
-      "Join a group of musicians jamming on Orange Street",
-      "Visit the legendary Studio One recording facility",
-      "Explore the sound systems setting up for evening dances"
-    ]
-  },
-  {
-    "desc": "You find a modest guesthouse near the Kingston Harbor, where the owner, Miss Pearl, welcomes you with curiosity about the foreign drummer. From your small room, you can hear the constant musical conversations between buildings - call and response patterns that seem to define the neighborhood's heartbeat. The rent is cheap, and Miss Pearl mentions that many musicians stay here while trying to make their mark.",
-    "options": [
-      "Ask Miss Pearl about the local music scene",
-      "Practice your drumming to attract other musicians",
-      "Explore the nearby record shops and music venues"
-    ]
-  },
-  {
-    "desc": "At the airport, you notice a group of Jamaican musicians returning from what appears to be a recording session or performance. They carry instruments and speak excitedly about new musical arrangements. One of them, a young bassist, notices your drumsticks and approaches with a friendly smile, curious about your musical background and what brings you to Jamaica.",
-    "options": [
-      "Share your drumming experience and ask about local opportunities",
-      "Inquire about the unique musical style they're developing",
-      "Offer to demonstrate your drumming skills right there"
-    ]
-  }
-]
-```
+## Starting Scene
+You step off the plane at Kingston's Palisadoes Airport, the humid Caribbean air immediately enveloping you like a warm embrace. The year is 1957, and Jamaica pulses with a musical energy you've never felt before. Palm trees sway in the trade winds, and you can hear the distant sound of drums and horns drifting from the city. Your worn suitcase contains little more than clothes and a pair of drumsticks - your ticket to a new life in this vibrant island.
 
 ## Story Context
 

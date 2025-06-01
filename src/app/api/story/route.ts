@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { readFile } from 'fs/promises'
-import { join } from 'path'
+import fs from 'fs'
+import path from 'path'
 
 interface StoryRequest {
   sessionId: string
@@ -25,89 +25,13 @@ interface StoryResponse {
   shouldRestart?: boolean
 }
 
-// Store conversation history per session
-const conversationHistory = new Map<string, any[]>()
-
-// Session metadata to track when sessions were created/last accessed
-const sessionMetadata = new Map<
-  string,
-  {
-    createdAt: number
-    lastAccessed: number
-    storyName: string
-  }
->()
-
-// Request deduplication map - stores active requests and their results
-const activeRequests = new Map<string, Promise<any>>()
-const cachedResponses = new Map<string, any>()
-
-// Generate unique key for each request
-function generateRequestKey(sessionId: string, choice?: number): string {
-  return `${sessionId}_${choice || 'init'}`
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
 }
 
-// Check if server has the session in memory
-function hasServerSession(sessionId: string): boolean {
-  return conversationHistory.has(sessionId)
-}
-
-// Initialize new server session
-function initializeServerSession(sessionId: string, storyName: string): void {
-  if (!conversationHistory.has(sessionId)) {
-    conversationHistory.set(sessionId, [])
-    sessionMetadata.set(sessionId, {
-      createdAt: Date.now(),
-      lastAccessed: Date.now(),
-      storyName: storyName,
-    })
-    console.log(`Initialized new server session: ${sessionId} for story: ${storyName}`)
-  }
-}
-
-// Update session access time
-function updateSessionAccess(sessionId: string): void {
-  const metadata = sessionMetadata.get(sessionId)
-  if (metadata) {
-    metadata.lastAccessed = Date.now()
-    sessionMetadata.set(sessionId, metadata)
-  }
-}
-
-// Clean up old sessions (called periodically)
-function cleanupOldSessions(): void {
-  const cutoffTime = Date.now() - 24 * 60 * 60 * 1000 // 24 hours ago
-  let cleanedCount = 0
-
-  // Convert to array to avoid iterator issues
-  const sessionsToCheck = Array.from(sessionMetadata.entries())
-
-  sessionsToCheck.forEach(([sessionId, metadata]) => {
-    if (metadata.lastAccessed < cutoffTime) {
-      conversationHistory.delete(sessionId)
-      sessionMetadata.delete(sessionId)
-      cleanedCount++
-    }
-  })
-
-  if (cleanedCount > 0) {
-    console.log(`Cleaned up ${cleanedCount} old sessions`)
-  }
-}
-
-// Call cleanup periodically (every hour)
-setInterval(cleanupOldSessions, 60 * 60 * 1000)
-
-async function loadStoryInstructions(storyName: string): Promise<string> {
-  try {
-    const filePath = join(process.cwd(), 'public', `${storyName}.md`)
-    const content = await readFile(filePath, 'utf8')
-    return content
-  } catch (error) {
-    console.error(`Error loading story instructions for ${storyName}:`, error)
-    throw new Error(`Story "${storyName}" not found`)
-  }
-}
+// In-memory session storage (replace with database in production)
+const sessionStorage = new Map<string, Message[]>()
 
 function parseStoryResponse(response: string): { currentStep: StoryStep; nextSteps: StoryStep[] } {
   try {
@@ -117,23 +41,43 @@ function parseStoryResponse(response: string): { currentStep: StoryStep; nextSte
     // Parse the JSON response
     const parsed = JSON.parse(cleanResponse)
 
-    // Validate the structure
-    if (!Array.isArray(parsed) || parsed.length !== 4) {
-      throw new Error('Invalid response format: expected array with 4 objects')
-    }
+    // Handle new format: single object with current step
+    if (parsed.desc && Array.isArray(parsed.options)) {
+      // Validate the single step format
+      if (parsed.options.length !== 3) {
+        throw new Error(`Invalid step format: expected 3 options, got ${parsed.options.length}`)
+      }
 
-    // Validate each step has required properties
-    for (let i = 0; i < parsed.length; i++) {
-      const step = parsed[i]
-      if (!step.desc || !Array.isArray(step.options) || step.options.length !== 3) {
-        throw new Error(`Invalid step ${i}: missing desc or options`)
+      // Create current step and empty next steps
+      return {
+        currentStep: {
+          step: 1, // Will be updated based on conversation history
+          desc: parsed.desc,
+          options: parsed.options,
+        },
+        nextSteps: [], // No pre-generated next steps in new format
       }
     }
 
-    return {
-      currentStep: { ...parsed[0], step: 1 },
-      nextSteps: parsed.slice(1).map((step, index) => ({ ...step, step: index + 2 })),
+    // Handle old format: array with 4 objects (for backward compatibility)
+    if (Array.isArray(parsed) && parsed.length === 4) {
+      // Validate each step has required properties
+      for (let i = 0; i < parsed.length; i++) {
+        const step = parsed[i]
+        if (!step.desc || !Array.isArray(step.options) || step.options.length !== 3) {
+          throw new Error(`Invalid step ${i}: missing desc or options`)
+        }
+      }
+
+      return {
+        currentStep: { ...parsed[0], step: 1 },
+        nextSteps: parsed.slice(1).map((step, index) => ({ ...step, step: index + 2 })),
+      }
     }
+
+    throw new Error(
+      'Invalid response format: expected either single object with desc/options or array with 4 objects'
+    )
   } catch (error) {
     console.error('Error parsing story response:', error)
     console.error('Raw response:', response)
@@ -141,45 +85,36 @@ function parseStoryResponse(response: string): { currentStep: StoryStep; nextSte
   }
 }
 
-async function callClaudeAPI(messages: any[]): Promise<string> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) {
-    throw new Error('ANTHROPIC_API_KEY is not set')
+async function callClaude(messages: Message[]): Promise<string> {
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY
+
+  if (!anthropicApiKey) {
+    throw new Error('ANTHROPIC_API_KEY is not configured')
   }
 
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'content-type': 'application/json',
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-3-sonnet-20240229',
-        messages: messages,
-        max_tokens: 2000,
-        temperature: 0.7,
-      }),
-    })
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicApiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-4-opus-20250514',
+      messages: messages,
+      max_tokens: 2000,
+      temperature: 0.8,
+    }),
+  })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Claude API error:', response.status, errorText)
-      throw new Error(`Claude API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-
-    if (!data.content || !data.content[0] || !data.content[0].text) {
-      throw new Error('Invalid response format from Claude API')
-    }
-
-    return data.content[0].text
-  } catch (error) {
-    console.error('Error calling Claude API:', error)
-    throw error
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error('Claude API Error:', response.status, errorText)
+    throw new Error(`Claude API error: ${response.status}`)
   }
+
+  const data = await response.json()
+  return data.content[0].text
 }
 
 export async function POST(request: NextRequest) {
@@ -187,194 +122,173 @@ export async function POST(request: NextRequest) {
     const body: StoryRequest = await request.json()
     const { sessionId, choice, storyName, language = 'français', forceRestart = false } = body
 
-    // Validate required fields
+    console.log('Story API Request:', { sessionId, choice, storyName, language, forceRestart })
+
     if (!sessionId || !storyName) {
-      return NextResponse.json({
-        success: false,
-        error: 'Missing required fields: sessionId and storyName',
-      })
-    }
-
-    // Generate request key for deduplication
-    const requestKey = generateRequestKey(sessionId, choice)
-
-    // Skip cache for force restart
-    if (!forceRestart) {
-      // Check if we have a cached response for this exact request
-      if (cachedResponses.has(requestKey)) {
-        console.log(`Returning cached response for ${requestKey}`)
-        return NextResponse.json(cachedResponses.get(requestKey))
-      }
-
-      // Check if there's already an active request for this key
-      if (activeRequests.has(requestKey)) {
-        console.log(`Waiting for existing request: ${requestKey}`)
-        const result = await activeRequests.get(requestKey)
-        return NextResponse.json(result)
-      }
-    }
-
-    // Create a new request promise
-    const requestPromise = (async () => {
-      try {
-        // Clean up old sessions periodically
-        if (Math.random() < 0.01) {
-          // 1% chance to trigger cleanup
-          cleanupOldSessions()
-        }
-
-        // Handle force restart
-        if (forceRestart) {
-          console.log(`Force restarting session: ${sessionId} for story: ${storyName}`)
-          // Clear existing session data
-          conversationHistory.delete(sessionId)
-          sessionMetadata.delete(sessionId)
-          // Initialize fresh session
-          initializeServerSession(sessionId, storyName)
-        }
-
-        // Initialize or update session
-        if (!hasServerSession(sessionId)) {
-          if (choice !== undefined && !forceRestart) {
-            // User is trying to continue a story but server doesn't have the session
-            return {
-              success: false,
-              error: 'Session expired or not found. Please refresh the page to restart.',
-              shouldRestart: true,
-            }
-          }
-          // Initialize new session for story start
-          initializeServerSession(sessionId, storyName)
-        } else {
-          // Update last accessed time
-          updateSessionAccess(sessionId)
-        }
-
-        // Get conversation history
-        const history = conversationHistory.get(sessionId) || []
-
-        let claudeResponse: string
-
-        if (choice === undefined || forceRestart) {
-          // Initial story request or forced restart
-          console.log(
-            `Starting ${forceRestart ? 'restarted' : 'new'} story: ${storyName} for session: ${sessionId}`
-          )
-
-          try {
-            const storyInstructions = await loadStoryInstructions(storyName)
-
-            const messages = [
-              {
-                role: 'user',
-                content: storyInstructions,
-              },
-            ]
-
-            claudeResponse = await callClaudeAPI(messages)
-
-            // Store the initial instructions and response in history
-            history.length = 0 // Clear existing history for restart
-            history.push(
-              { role: 'user', content: storyInstructions },
-              { role: 'assistant', content: claudeResponse }
-            )
-          } catch (error) {
-            console.error('Error loading story or calling Claude:', error)
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : 'Failed to start story',
-            }
-          }
-        } else {
-          // Continue story with user choice
-          console.log(`Continuing story for session: ${sessionId}, choice: ${choice}`)
-
-          if (history.length === 0) {
-            return {
-              success: false,
-              error: 'No story context found. Please refresh to start over.',
-              shouldRestart: true,
-            }
-          }
-
-          // Add user choice to history
-          const userMessage = {
-            role: 'user',
-            content: `I choose option ${choice}.`,
-          }
-
-          history.push(userMessage)
-
-          try {
-            claudeResponse = await callClaudeAPI(history)
-
-            // Add Claude's response to history
-            history.push({
-              role: 'assistant',
-              content: claudeResponse,
-            })
-          } catch (error) {
-            console.error('Error calling Claude API:', error)
-            // Remove the user message if Claude call failed
-            history.pop()
-            return {
-              success: false,
-              error: 'Failed to process your choice. Please try again.',
-            }
-          }
-        }
-
-        // Update conversation history
-        conversationHistory.set(sessionId, history)
-
-        // Parse the response
-        const parsedResponse = parseStoryResponse(claudeResponse)
-
-        const result: StoryResponse = {
-          sessionId,
-          currentStep: parsedResponse.currentStep,
-          nextSteps: parsedResponse.nextSteps,
-          success: true,
-        }
-
-        // Cache the result (unless it was a force restart)
-        if (!forceRestart) {
-          cachedResponses.set(requestKey, result)
-
-          // Clean up cache if it gets too large
-          if (cachedResponses.size > 1000) {
-            const keysToDelete = Array.from(cachedResponses.keys()).slice(0, 100)
-            keysToDelete.forEach(key => cachedResponses.delete(key))
-          }
-        }
-
-        return result
-      } catch (error) {
-        console.error('Error in story processing:', error)
-        return {
+      return NextResponse.json(
+        {
           success: false,
-          error: error instanceof Error ? error.message : 'An unexpected error occurred',
-        }
-      }
-    })()
-
-    // Store the active request (unless force restart)
-    if (!forceRestart) {
-      activeRequests.set(requestKey, requestPromise)
+          error: 'Missing required parameters: sessionId and storyName',
+        },
+        { status: 400 }
+      )
     }
 
     try {
-      const result = await requestPromise
-      return NextResponse.json(result)
-    } finally {
-      // Clean up the active request
-      if (!forceRestart) {
-        activeRequests.delete(requestKey)
+      // Handle force restart
+      if (forceRestart) {
+        console.log(`Force restarting session: ${sessionId} for story: ${storyName}`)
+        sessionStorage.delete(sessionId)
       }
+
+      // Get or create conversation history
+      let history = sessionStorage.get(sessionId) || []
+
+      if (history.length === 0) {
+        console.log(`Initialized new server session: ${sessionId} for story: ${storyName}`)
+
+        // Read the story file from public folder
+        const storyFilePath = path.join(process.cwd(), 'public', `${storyName}.md`)
+
+        if (!fs.existsSync(storyFilePath)) {
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Story '${storyName}' not found`,
+            },
+            { status: 404 }
+          )
+        }
+
+        const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
+
+        // Standard instructions for all stories (put in first prompt)
+        const standardInstructions = `# INSTRUCTIONS FOR THE ADVENTURE
+
+## Mandatory Response Format
+
+At each step, provide ONLY a JSON object (nothing else) with this exact model:
+
+\`\`\`json
+{
+    "desc": "Description of the current step",
+    "options": [
+      "Option 1",
+      "Option 2", 
+      "Option 3"
+    ]
+}
+\`\`\`
+
+**IMPORTANT:** 
+- Respond ONLY with the JSON, no other text
+- Respond in the language: ${language}
+- Keep in memory the choices of users: make it so the story don't repeat itself
+- There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
+- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
+- CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
+
+## Story Content:
+
+${storyContent}`
+
+        // Create the first prompt content
+        const firstPromptContent = forceRestart
+          ? `Please start a new adventure based on this story. Begin from the very first step.\n\n${standardInstructions}`
+          : `Please start this adventure story from the beginning.\n\n${standardInstructions}`
+
+        // Log the full first prompt for debugging
+        console.log('=== FIRST PROMPT CONTENT ===')
+        console.log(firstPromptContent)
+        console.log('=== END FIRST PROMPT ===')
+
+        // Initialize conversation with story content
+        history.push({
+          role: 'user',
+          content: firstPromptContent,
+        })
+
+        console.log(
+          forceRestart
+            ? `Starting restarted story: ${storyName} for session: ${sessionId}`
+            : `Starting new story: ${storyName} for session: ${sessionId}`
+        )
+      } else if (choice !== undefined) {
+        // Add user choice to conversation
+        history.push({
+          role: 'user',
+          content: `I choose option ${choice}. Please continue the story and provide the next step following the format instructions.`,
+        })
+
+        console.log(`User selected choice ${choice} for session: ${sessionId}`)
+      } else {
+        // Just continuing existing story without a choice (e.g., page refresh)
+        console.log(`Continuing existing story for session: ${sessionId}`)
+      }
+
+      // Call Claude API
+      const claudeResponse = await callClaude(history)
+      console.log('Claude response received')
+
+      // Add Claude's response to history
+      history.push({
+        role: 'assistant',
+        content: claudeResponse,
+      })
+
+      // Update session storage
+      sessionStorage.set(sessionId, history)
+
+      // Parse the response
+      const parsedResponse = parseStoryResponse(claudeResponse)
+
+      // Calculate current step number based on conversation history
+      const userChoices = history.filter(
+        msg => msg.role === 'user' && msg.content.includes('I choose option')
+      ).length
+      const currentStepNumber = userChoices + 1
+
+      const result: StoryResponse = {
+        sessionId,
+        currentStep: {
+          ...parsedResponse.currentStep,
+          step: currentStepNumber,
+        },
+        nextSteps: parsedResponse.nextSteps,
+        success: true,
+      }
+
+      console.log('Story API Response:', {
+        sessionId,
+        currentStep: result.currentStep.step,
+        success: true,
+      })
+      return NextResponse.json(result)
+    } catch (error) {
+      console.error('Error in story processing:', error)
+
+      // If the session might be corrupted, suggest restart
+      if (error instanceof Error && error.message.includes('parse')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to parse story response',
+            shouldRestart: true,
+          },
+          { status: 500 }
+        )
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        },
+        { status: 500 }
+      )
     }
   } catch (error) {
-    console.error('Error in POST handler:', error)
+    console.error('Error parsing request body:', error)
     return NextResponse.json(
       {
         success: false,
@@ -387,15 +301,11 @@ export async function POST(request: NextRequest) {
 
 // Health check endpoint
 export async function GET() {
-  const sessionCount = conversationHistory.size
-  const activeRequestCount = activeRequests.size
-  const cacheSize = cachedResponses.size
+  const sessionCount = sessionStorage.size
 
   return NextResponse.json({
     status: 'healthy',
     sessions: sessionCount,
-    activeRequests: activeRequestCount,
-    cacheSize: cacheSize,
     timestamp: new Date().toISOString(),
   })
 }

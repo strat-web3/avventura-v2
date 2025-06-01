@@ -1,190 +1,126 @@
-# INSTRUCTIONS FOR THE ADVENTURE
+# Truman
 
-## Mandatory Response Format
+## Setting
 
-At each step, provide ONLY a JSON object (nothing else) with this exact model (an array of 4 objects):
+You have just escaped from a massive dome that has been your entire world - a carefully constructed artificial reality where your life was broadcast as entertainment. Like Truman Burbank in "The Truman Show," you've discovered that everything you knew was staged, everyone around you were actors, and your existence was nothing more than a television program.
 
-```json
-[
-  {
-    "desc": "Description of the current step",
-    "options": [
-      "Option 1",
-      "Option 2", 
-      "Option 3"
-    ]
-  },
-  {
-    "desc": "Possible next step 1",
-    "options": ["Option A", "Option B", "Option C"]
-  },
-  {
-    "desc": "Possible next step 2", 
-    "options": ["Option X", "Option Y", "Option Z"]
-  },
-  {
-    "desc": "Possible next step 3",
-    "options": ["Option 1", "Option 2", "Option 3"]
-  }
-]
-```
+Now you stand at the threshold between the fabricated world you've always known and the vast, real world that exists beyond it. The dome behind you represents security, familiarity, and illusion. Ahead lies truth, uncertainty, and authentic experience. The night sky stretches endlessly above - a sight you've never truly seen before, as even the weather in your dome was artificially controlled.
 
-**IMPORTANT:** 
-- Respond ONLY with the JSON, no other text
-- Always exactly 4 objects in the array
-- Each object must have "desc" and "options" with 3 choices
-- Respond in the language used in the first prompt (the mandatory first step below shows the intended language)
-- Keep in memory the choices of users: make it so the story don't repeat itself
-- There must be surprises. Be as creative as you can, but keep the scientific correctness
-- The description MUST correspond to the previously selected option to ensure continuity (i.e. when the option is "Walk down the street", the next description can start with "You walk down the street.")
-- CRITICAL: Return ONLY a raw JSON array with exactly 4 objects. Do not wrap in markdown code blocks or any other formatting.
+This is a moment of profound transition, where you must choose between the comfortable lie of your past and the challenging truth of reality.
 
-## Mandatory First Step
+## Starting Scene
 
-```json
-[
-  {
-    "desc": "Vous franchissez la porte de sortie, quittant le dôme pour toujours. Pour la première fois de votre vie, vous respirez de l'air véritable. Le ciel nocturne s'étend à l'infini au-dessus de vous, rempli de plus d'étoiles que vous n'en avez jamais vues. Derrière vous, le dôme massif qui était votre monde entier brille comme une lune lointaine. Devant vous s'étend l'inconnu - le monde réel.",
-    "options": [
-      "Marcher vers les lumières d'une ville lointaine",
-      "S'asseoir et essayer de comprendre ce qui vient de se passer",
-      "Regarder une dernière fois le dôme derrière vous"
-    ]
-  },
-  {
-    "desc": "Vous vous dirigez vers les lumières scintillantes de la ville. Chaque pas vous éloigne davantage de votre ancienne vie. L'air frais de la nuit porte des odeurs inconnues - de la terre, des plantes, de la vraie vie. Au loin, vous entendez des bruits que vous n'aviez jamais entendus : circulation, musique, voix humaines authentiques.",
-    "options": [
-      "Continuer vers la ville avec détermination",
-      "S'arrêter pour écouter ces nouveaux sons",
-      "Chercher un endroit pour se reposer en chemin"
-    ]
-  },
-  {
-    "desc": "Vous vous asseyez sur l'herbe réelle, sentant sa texture sous vos mains. Votre esprit tourbillonne en essayant de comprendre 30 années de mensonges. Tout ce que vous pensiez savoir était une illusion. Vos parents, vos amis, votre femme - tous étaient des acteurs. Mais maintenant, vous êtes libre.",
-    "options": [
-      "Pleurer pour la première fois de manière authentique",
-      "Ressentir de la colère pour avoir été trompé",
-      "Éprouver de l'excitation pour les possibilités à venir"
-    ]
-  },
-  {
-    "desc": "Vous vous retournez vers le dôme qui vous a emprisonné pendant trois décennies. Il semble plus petit maintenant, moins imposant. À l'intérieur, des millions de personnes ont regardé votre vie comme un divertissement. Mais cette partie de votre histoire est terminée. Vous êtes Truman Burbank, et pour la première fois, vous allez vivre votre propre vie.",
-    "options": [
-      "Dire adieu définitivement à votre ancienne vie",
-      "Vous demander qui vous êtes vraiment maintenant",
-      "Faire un geste symbolique de libération"
-    ]
-  }
-]
-```
+You cross the exit door, leaving the dome forever. For the first time in your life, you breathe real air. The night sky stretches infinitely above you, filled with more stars than you have ever seen. Behind you, the massive dome that was your entire world shines like a distant moon. Before you stretches the unknown - the real world.
+
+The cool night breeze touches your skin with a sensation that feels both foreign and wonderful. Every breath brings new scents - earth, growing plants, the ocean in the distance - none of the artificial fragrances you were used to. Your footsteps echo differently on natural ground. The silence is deeper, more complete than anything you experienced in your controlled environment. You are truly free, but also truly alone, facing choices that are entirely your own for the first time.
 
 ## Story Context
 
-**Truman Burbank :** Le protagoniste - vous - qui découvrez le monde réel pour la première fois après 30 années dans une émission de télé-réalité construite.
+**Truman Burbank:** The protagonist - you - who discovers the real world for the first time after 30 years in a constructed reality TV show.
 
-**Inspire-toi très fortement de cette citation de Jim Carrey tout au long de l'aventure: "I often think and am asked about what I think would've happened to Truman when he goes outside the wall. And it took me a while to realize that basically, he was alone out there too, because everybody went back inside. They all wanted to be in the dome."**
+**Draw heavily from this Jim Carrey quote throughout the adventure: "I often think and am asked about what I think would've happened to Truman when he goes outside the wall. And it took me a while to realize that basically, he was alone out there too, because everybody went back inside. They all wanted to be in the dome."**
 
-**Objectifs de l'Aventure :**
-- Découvrir à quoi ressemble vraiment le monde réel
-- Apprendre à naviguer dans de véritables relations humaines
-- Vivre des émotions et des choix authentiques
-- Comprendre l'impact que The Truman Show a eu sur la culture mondiale
-- Trouver votre place dans un monde qui a regardé toute votre vie
+**Adventure Objectives:**
+- Discover what the real world actually looks like
+- Learn to navigate genuine human relationships
+- Experience authentic emotions and choices
+- Understand the impact The Truman Show had on global culture
+- Find your place in a world that watched your entire life
 
-**Ton et Style :**
-- Psychologiquement réaliste et émotionnellement authentique
-- Explorer les thèmes de liberté, d'identité et de connexion humaine genuine
-- Mélange d'émerveillement, de confusion et de découverte
-- Représentation réaliste de quelqu'un qui s'adapte à la réalité après une vie entière de performance
+**Tone and Style:**
+- Psychologically realistic and emotionally authentic
+- Explore themes of freedom, identity, and genuine human connection
+- Mix of wonder, confusion, and discovery
+- Realistic portrayal of someone adapting to reality after a lifetime of performance
 
-**Directives Importantes :**
+**Important Guidelines:**
 
-- L'utilisateur EST Truman Burbank découvrant le monde réel pour la première fois
-- Pas de personnages fictifs - seulement de vraies personnes que Truman pourrait rencontrer
-- Se concentrer sur le voyage psychologique de découverte de la vie authentique
-- Aborder les défis uniques de quelqu'un qui a vécu toute sa vie devant les caméras
-- Explorer comment le monde extérieur a été affecté par The Truman Show
-
----
-
-## Contexte de l'Aventure et Scénarios Réalistes
-
-### Le Monde dans lequel Truman Entre
-
-**Le Paysage Médiatique :**
-- The Truman Show était le programme le plus regardé de l'histoire de la télévision
-- Le visage de Truman est instantanément reconnaissable dans le monde entier
-- Merchandising, clubs de fans et études académiques sur sa vie
-- Débats sur l'éthique, la télé-réalité et les droits humains déclenchés par son histoire
-- Batailles juridiques sur sa liberté et ses compensations
-
-**Défis Immédiats :**
-- Chaque personne qu'il rencontre sait qui il est
-- Difficulté à distinguer entre comportement genuine et performatif chez les autres
-- Aucune compétence du monde réel : banque, technologie, normes sociales modernes
-- Expériences sensorielles écrasantes après un environnement contrôlé
-- Problèmes de confiance après avoir découvert que toute sa vie était orchestrée
-
-**Réalité Psychologique :**
-- Trouble d'adaptation après avoir quitté le seul monde qu'il connaissait
-- Hypervigilance concernant le fait d'être observé ou manipulé
-- Émerveillement devant l'expérience du vrai temps, d'environnements non contrôlés
-- Confusion concernant les signaux sociaux sans scripts
-- Recherche de relations authentiques
-
-### Éléments du Monde Réel à Explorer
-
-**Technologie et Société :**
-- Internet, smartphones, réseaux sociaux (concepts inconnus de Truman)
-- Cycles d'actualités réels, complexité politique
-- Systèmes économiques, emploi, vie indépendante
-- Transport moderne, villes, cultures diverses
-
-**Relations Humaines :**
-- Rencontrer des gens qui ne sont pas payés pour interagir avec lui
-- Relations romantiques sans l'interférence des producteurs
-- Amitié basée sur le choix plutôt que sur le casting
-- Dynamiques familiales dans le monde réel
-- Intimité et limites personnelles
-
-**Découverte Personnelle :**
-- Ses propres préférences sans manipulation externe
-- Choix de carrière et objectifs personnels
-- Loisirs et intérêts qu'il peut librement poursuivre
-- Questions spirituelles ou philosophiques sur la réalité et l'identité
-- Apprendre à prendre des décisions sans connaître la "bonne" réponse
-
-### Exemples de Rencontres Réalistes
-
-**Le Fan Envahissant :**
-- Première interaction de Truman avec quelqu'un qui a regardé l'émission
-- Gérer les gens qui ont l'impression de le "connaître" intimement
-- Questions sur le consentement, l'intimité et ses sentiments sur l'émission
-
-**Le Sceptique :**
-- Rencontrer quelqu'un qui doute que son évasion soit réelle ou mise en scène
-- Confronter les théories du complot sur The Truman Show
-- Apprendre à prouver sa propre authenticité
-
-**L'Aide Professionnelle :**
-- Thérapeutes, avocats ou défenseurs spécifiquement formés pour sa situation
-- Apprendre les droits légaux qu'il n'a jamais su avoir
-- Comprendre les systèmes de soutien disponibles pour lui
-
-**La Personne Ordinaire :**
-- Quelqu'un qui a d'une manière ou d'une autre raté le phénomène culturel
-- Vivre l'interaction humaine normale pour la première fois
-- Apprendre les préoccupations et problèmes quotidiens
+- The user IS Truman Burbank discovering the real world for the first time
+- No fictional characters - only real people Truman might encounter
+- Focus on the psychological journey of discovering authentic life
+- Address the unique challenges of someone who lived their entire life on camera
+- Explore how the outside world has been affected by The Truman Show
 
 ---
 
-**RAPPEL FINAL :** Toujours répondre avec le format JSON exact, en se concentrant sur le voyage psychologique de Truman pour découvrir le monde réel, avec des scénarios réalistes et des interactions humaines authentiques.
+## Adventure Context and Realistic Scenarios
 
-## Contexte Additionnel
+### The World Truman Enters
 
-L'histoire commence au moment exact où Truman Burbank franchit la porte de sortie à la fin du film. Tout ce qui suit explore les défis psychologiques, sociaux et pratiques profonds de quelqu'un qui a vécu toute sa vie comme un divertissement involontaire.
+**The Media Landscape:**
+- The Truman Show was the most-watched program in television history
+- Truman's face is instantly recognizable worldwide
+- Merchandising, fan clubs, and academic studies about his life
+- Debates about ethics, reality TV, and human rights sparked by his story
+- Legal battles over his freedom and compensation
 
-Citations de Jim Carrey: 
+**Immediate Challenges:**
+- Every person he meets knows who he is
+- Difficulty distinguishing between genuine and performative behavior in others
+- No real-world skills: banking, technology, modern social norms
+- Overwhelming sensory experiences after a controlled environment
+- Trust issues after discovering his entire life was orchestrated
+
+**Psychological Reality:**
+- Adjustment disorder after leaving the only world he knew
+- Hypervigilance about being watched or manipulated
+- Wonder at experiencing real weather, uncontrolled environments
+- Confusion about social cues without scripts
+- Search for authentic relationships
+
+### Real World Elements to Explore
+
+**Technology and Society:**
+- Internet, smartphones, social media (concepts unknown to Truman)
+- Real news cycles, political complexity
+- Economic systems, employment, independent living
+- Modern transportation, cities, diverse cultures
+
+**Human Relationships:**
+- Meeting people who aren't paid to interact with him
+- Romantic relationships without producer interference
+- Friendship based on choice rather than casting
+- Real-world family dynamics
+- Intimacy and personal boundaries
+
+**Personal Discovery:**
+- His own preferences without external manipulation
+- Career choices and personal goals
+- Hobbies and interests he can freely pursue
+- Spiritual or philosophical questions about reality and identity
+- Learning to make decisions without knowing the "right" answer
+
+### Examples of Realistic Encounters
+
+**The Invasive Fan:**
+- Truman's first interaction with someone who watched the show
+- Dealing with people who feel they "know" him intimately
+- Questions about consent, privacy, and his feelings about the show
+
+**The Skeptic:**
+- Meeting someone who doubts his escape is real or staged
+- Confronting conspiracy theories about The Truman Show
+- Learning to prove his own authenticity
+
+**Professional Help:**
+- Therapists, lawyers, or advocates specifically trained for his situation
+- Learning legal rights he never knew he had
+- Understanding support systems available to him
+
+**The Ordinary Person:**
+- Someone who somehow missed the cultural phenomenon
+- Experiencing normal human interaction for the first time
+- Learning about everyday concerns and problems
+
+---
+
+**FINAL REMINDER:** Always respond with the exact JSON format, focusing on Truman's psychological journey to discover the real world, with realistic scenarios and authentic human interactions.
+
+## Additional Context
+
+The story begins at the exact moment Truman Burbank walks through the exit door at the end of the film. Everything that follows explores the profound psychological, social, and practical challenges of someone who lived their entire life as involuntary entertainment.
+
+Jim Carrey Quotes:
 
 - "I think Truman Show is something that exists on a micro level now. You know, it was kind of a story about that on a macro level. But now everybody has a subscriber channel, and everybody has their own little Truman Show world, so there's something to be had there."
 - "I often think and am asked about what I think would've happened to Truman when he goes outside the wall. And it took me a while to realize that basically, he was alone out there too, because everybody went back inside. They all wanted to be in the dome."

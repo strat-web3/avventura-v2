@@ -398,8 +398,6 @@ export default function StoryPage() {
             <>
               <VStack spacing={4} width="100%">
                 {currentStep.options.map((option, index) => {
-                  const isOptionAvailable = nextSteps && nextSteps.length >= index + 1
-
                   return (
                     <Box
                       key={index}
@@ -408,7 +406,7 @@ export default function StoryPage() {
                       p={4}
                       borderWidth="2px"
                       borderColor="gray.600"
-                      onClick={isOptionAvailable ? () => nextStep(index + 1) : undefined}
+                      onClick={() => nextStep(index + 1)}
                       cursor="pointer"
                       _hover={{
                         borderColor: '#8c1c84',
