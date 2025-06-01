@@ -8,7 +8,7 @@ interface StoryRequest {
   storyName: string
   language?: string
   forceRestart?: boolean
-  conversationHistory?: Message[] // Add this - client sends conversation
+  conversationHistory?: Message[] // Keep for backward compatibility but won't use for choices
 }
 
 interface StoryStep {
@@ -58,7 +58,20 @@ async function callClaude(messages: Message[]): Promise<string> {
   }
 
   console.log('🚀 Calling Claude API with', messages.length, 'messages')
-  console.log('messages content', messages)
+
+  // Log all messages being sent to Claude
+  console.log('📤 MESSAGES SENT TO CLAUDE:')
+  messages.forEach((message, index) => {
+    console.log(`--- Message ${index + 1} (${message.role.toUpperCase()}) ---`)
+    console.log(`📏 Length: ${message.content.length} characters`)
+    if (message.content.length <= 200) {
+      console.log(`📄 Full content: ${message.content}`)
+    } else {
+      console.log(`📄 Preview: ${message.content.substring(0, 200)}...`)
+      console.log(`📄 Full content: ${message.content}`)
+    }
+    console.log('--- End Message ---')
+  })
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -82,7 +95,15 @@ async function callClaude(messages: Message[]): Promise<string> {
   }
 
   const data = await response.json()
-  return data.content[0].text
+  const claudeResponse = data.content[0].text
+
+  // Log Claude's complete response
+  console.log('📥 CLAUDE API RESPONSE:')
+  console.log(`📏 Response length: ${claudeResponse.length} characters`)
+  console.log(`📄 Full response: ${claudeResponse}`)
+  console.log('--- End Claude Response ---')
+
+  return claudeResponse
 }
 
 function createInitialSystemMessage(storyContent: string, language: string): string {
@@ -119,6 +140,8 @@ ${storyContent}
 
 After this initial setup, the user will communicate with you using only simple choice messages like "Choice 1", "Choice 2", or "Choice 3". You should interpret these as the user selecting that numbered option from your previous response and continue the story accordingly.
 
+**IMPORTANT MEMORY INSTRUCTION:** You must remember the ENTIRE conversation history and story progression from all previous exchanges. Each user message will ONLY contain their choice (e.g., "Choice 2"), and you must recall all previous story steps, character interactions, and plot developments to ensure perfect continuity. Do not ask for context or previous information - maintain complete memory of the adventure's progression.
+
 Now please start this adventure story from the beginning.`
 }
 
@@ -131,10 +154,10 @@ export async function POST(request: NextRequest) {
       storyName,
       language = 'français',
       forceRestart = false,
-      conversationHistory = [], // Client provides conversation history
+      conversationHistory = [], // Keep for initial requests but ignore for choices
     } = body
 
-    console.log('🎮 Stateless Story API Request:', {
+    console.log('🎮 Memory-Optimized Story API Request:', {
       sessionId,
       choice,
       storyName,
@@ -153,10 +176,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    let history = [...conversationHistory] // Work with copy
+    let history: Message[] = []
 
     // Handle new conversation or force restart
-    if (history.length === 0 || forceRestart) {
+    if (conversationHistory.length === 0 || forceRestart) {
       console.log(`🆕 Starting new conversation for: ${storyName}`)
 
       // Read the story file
@@ -175,7 +198,7 @@ export async function POST(request: NextRequest) {
       const storyContent = fs.readFileSync(storyFilePath, 'utf-8')
       const initialMessage = createInitialSystemMessage(storyContent, language)
 
-      // Reset history and add initial message
+      // Set up initial conversation
       history = [
         {
           role: 'user',
@@ -183,16 +206,24 @@ export async function POST(request: NextRequest) {
         },
       ]
     } else if (choice !== undefined) {
-      // Add user choice
+      // For choice requests with existing conversation, only send the choice
       const choiceMessage = `Choice ${choice}`
-      history.push({
-        role: 'user',
-        content: choiceMessage,
-      })
 
-      console.log(`🎯 User selected choice ${choice}`)
+      history = [
+        {
+          role: 'user',
+          content: choiceMessage,
+        },
+      ]
+
+      console.log(
+        `🎯 User selected choice ${choice} - relying on Claude's memory (conversation exists with ${conversationHistory.length} messages)`
+      )
     } else {
-      // Continuing existing conversation - check if we need Claude's response
+      // Continuing existing conversation with full history (for page refresh scenarios)
+      history = [...conversationHistory]
+
+      // Check if we need Claude's response
       if (history.length > 0 && history[history.length - 1].role === 'assistant') {
         // We have the last response, return it
         const lastResponse = history[history.length - 1].content
@@ -225,33 +256,103 @@ export async function POST(request: NextRequest) {
     console.log(`📊 Calling Claude with ${history.length} messages`)
     const claudeResponse = await callClaude(history)
 
-    // Add Claude's response to history
-    history.push({
-      role: 'assistant',
-      content: claudeResponse,
-    })
+    // For initial requests, we need to return the full conversation history
+    // For choice requests, we simulate the conversation history for the client
+    let responseHistory: Message[]
+
+    // Check if Claude's response is valid JSON (for choice requests)
+    if (choice !== undefined && conversationHistory.length > 0) {
+      try {
+        // Test if the response is valid JSON
+        const testParse = JSON.parse(claudeResponse.replace(/```json\s*|\s*```/g, '').trim())
+        if (!testParse.desc || !Array.isArray(testParse.options)) {
+          throw new Error('Invalid JSON structure')
+        }
+        // Memory worked - set empty response history for choice requests
+        responseHistory = []
+      } catch (jsonError) {
+        console.log('⚠️ Claude memory failed, falling back to full conversation history')
+
+        // Fallback: Send the full conversation history with proper typing
+        const fullHistory: Message[] = [
+          ...conversationHistory,
+          {
+            role: 'user' as const,
+            content: `Choice ${choice}`,
+          },
+        ]
+
+        console.log(`🔄 Retrying with full history (${fullHistory.length} messages)`)
+        const retryResponse = await callClaude(fullHistory)
+
+        // Update response history for return
+        responseHistory = [
+          ...fullHistory,
+          {
+            role: 'assistant' as const,
+            content: retryResponse,
+          },
+        ]
+
+        // Parse the retry response
+        const parsedResponse = parseStoryResponse(retryResponse)
+        const userChoices = conversationHistory.filter(
+          msg => msg.role === 'user' && msg.content.startsWith('Choice ')
+        ).length
+
+        const result = {
+          sessionId,
+          currentStep: {
+            ...parsedResponse.currentStep,
+            step: userChoices + 2,
+          },
+          nextSteps: parsedResponse.nextSteps,
+          conversationHistory: responseHistory,
+          success: true,
+        }
+
+        console.log('✅ Memory-optimized API response ready (with fallback)')
+        return NextResponse.json(result)
+      }
+    } else {
+      // For initial requests, build the full history
+      responseHistory = [
+        ...history,
+        {
+          role: 'assistant' as const,
+          content: claudeResponse,
+        },
+      ]
+    }
 
     // Parse the response
     const parsedResponse = parseStoryResponse(claudeResponse)
-    const userChoices = history.filter(
-      msg => msg.role === 'user' && msg.content.startsWith('Choice ')
-    ).length
+
+    // Calculate step number based on whether this is a choice or initial request
+    let stepNumber = 1
+    if (choice !== undefined && conversationHistory.length > 0) {
+      // For choice requests, increment from the conversation history
+      const userChoices = conversationHistory.filter(
+        msg => msg.role === 'user' && msg.content.startsWith('Choice ')
+      ).length
+      stepNumber = userChoices + 2 // +1 for current choice, +1 for next step
+    }
 
     const result = {
       sessionId,
       currentStep: {
         ...parsedResponse.currentStep,
-        step: userChoices + 1,
+        step: stepNumber,
       },
       nextSteps: parsedResponse.nextSteps,
-      conversationHistory: history, // Return complete conversation history
+      conversationHistory: responseHistory, // Return appropriate history
       success: true,
     }
 
-    console.log('✅ Stateless API response ready')
+    console.log('✅ Memory-optimized API response ready')
     return NextResponse.json(result)
   } catch (error) {
-    console.error('❌ Error in stateless story processing:', error)
+    console.error('❌ Error in memory-optimized story processing:', error)
 
     return NextResponse.json(
       {
@@ -265,7 +366,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   return NextResponse.json({
-    status: 'healthy - stateless',
+    status: 'healthy - memory optimized',
     timestamp: new Date().toISOString(),
   })
 }
