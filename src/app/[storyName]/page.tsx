@@ -6,6 +6,7 @@ import { useAppKitAccount, useAppKitNetwork, useAppKitProvider } from '@reown/ap
 import { BrowserProvider, parseEther, formatEther } from 'ethers'
 import Link from 'next/link'
 import { useTranslation } from '@/hooks/useTranslation'
+import { useLanguage } from '@/context/LanguageContext'
 import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
 import { SessionManager } from '@/app/utils/sessionStorage'
@@ -92,6 +93,24 @@ const generateSessionId = (): string => {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
+// Helper function to convert language code to language name for API
+const getLanguageForAPI = (languageCode: string): string => {
+  const languageMap: Record<string, string> = {
+    en: 'English',
+    zh: '中文',
+    hi: 'हिन्दी',
+    es: 'Español',
+    fr: 'français',
+    ar: 'العربية',
+    bn: 'বাংলা',
+    ru: 'Русский',
+    pt: 'Português',
+    ur: 'اردو',
+  }
+
+  return languageMap[languageCode] || 'français' // Fallback to français
+}
+
 export default function StoryPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [showOptions, setShowOptions] = useState(false)
@@ -107,6 +126,7 @@ export default function StoryPage() {
 
   const { address, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider('eip155')
+  const { language } = useLanguage() // Get current language
   const toast = useToast()
   const t = useTranslation()
   const params = useParams()
@@ -217,7 +237,7 @@ export default function StoryPage() {
 
   // Updated initializeStory function
   const initializeStory = async () => {
-    console.log('Initializing story for:', storyName)
+    console.log('Initializing story for:', storyName, 'with language:', language)
     setIsLoadingWithLogging(true, 'Story initialization started')
 
     try {
@@ -248,11 +268,15 @@ export default function StoryPage() {
       setSessionId(sessionToUse)
       setConversationHistory(existingHistory)
 
+      // Get language for API call with fallback
+      const apiLanguage = getLanguageForAPI(language)
+      console.log(`Using language for API: ${apiLanguage} (from browser language: ${language})`)
+
       // Make API call with existing conversation history
       const response = await callStoryAPI({
         sessionId: sessionToUse,
         storyName: storyName,
-        language: 'français',
+        language: apiLanguage, // Use detected language with fallback
         conversationHistory: existingHistory,
         forceRestart: false,
       })
@@ -306,6 +330,8 @@ export default function StoryPage() {
     console.log(
       'useEffect triggered, storyName:',
       storyName,
+      'language:',
+      language,
       'initializeOnce.current:',
       initializeOnce.current
     )
@@ -315,23 +341,27 @@ export default function StoryPage() {
       console.log('Calling initializeStory')
       initializeStory()
     }
-  }, [storyName])
+  }, [storyName, language]) // Include language in dependencies
 
   const handleTypingComplete = useCallback(() => {
     setShowOptionsWithLogging(true, 'Typing animation completed')
   }, [])
 
   const nextStep = async (choice: number) => {
-    console.log('Next step called with choice:', choice)
+    console.log('Next step called with choice:', choice, 'language:', language)
     setIsLoadingWithLogging(true, `User selected choice ${choice}`)
     setShowOptionsWithLogging(false, 'Starting new choice processing')
 
     try {
+      // Get language for API call with fallback
+      const apiLanguage = getLanguageForAPI(language)
+      console.log(`Using language for API: ${apiLanguage} (from browser language: ${language})`)
+
       const response = await callStoryAPI({
         sessionId: sessionId,
         choice: choice,
         storyName: storyName,
-        language: 'français',
+        language: apiLanguage, // Use detected language with fallback
         conversationHistory: conversationHistory, // Send conversation history to indicate this is NOT a new conversation
       })
 
