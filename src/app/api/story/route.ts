@@ -95,7 +95,7 @@ async function makeAnthropicRequest(requestBody: any, attempt: number = 1): Prom
 
 // Main processing function - returns data object, not NextResponse
 async function processStoryRequest(body: StoryRequest): Promise<any> {
-  const { sessionId, choice, storyName, language = 'fr' } = body
+  const { sessionId, choice, storyName, language } = body
 
   // Enhanced environment variable checking
   console.log('🔍 Environment Check:', {

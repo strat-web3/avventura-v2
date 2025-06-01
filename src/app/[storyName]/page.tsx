@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Container, Text, Button, useToast, Box, VStack, Flex } from '@chakra-ui/react'
 import { useAppKitAccount, useAppKitNetwork, useAppKitProvider } from '@reown/appkit/react'
 import { BrowserProvider, parseEther, formatEther } from 'ethers'
@@ -57,7 +57,6 @@ const TypingEffect: React.FC<TypingEffectProps> = ({ text, speed = 10, onComplet
   return <TypingText>{displayedText}</TypingText>
 }
 
-// Custom Loader Component using the existing SVG
 const CustomLoader: React.FC<{ size?: number }> = ({ size = 60 }) => {
   return (
     <Box
@@ -72,7 +71,6 @@ const CustomLoader: React.FC<{ size?: number }> = ({ size = 60 }) => {
   )
 }
 
-// Generate a unique session ID
 const generateSessionId = (): string => {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
@@ -86,6 +84,10 @@ export default function StoryPage() {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isLoadingBackground, setIsLoadingBackground] = useState(false)
 
+  // Simple ref to prevent duplicate initialization in React Strict Mode
+  const initializeOnce = useRef(false)
+  const currentStoryName = useRef<string>('')
+
   const { address, isConnected } = useAppKitAccount()
   const { walletProvider } = useAppKitProvider('eip155')
   const toast = useToast()
@@ -93,205 +95,175 @@ export default function StoryPage() {
   const params = useParams()
   const storyName = params.storyName as string
 
-  // Enhanced logging wrapper for setShowOptions
+  // Reset the flag only when storyName actually changes
+  if (currentStoryName.current !== storyName) {
+    console.log('Story name changed from', currentStoryName.current, 'to', storyName)
+    currentStoryName.current = storyName
+    initializeOnce.current = false
+  }
+
   const setShowOptionsWithLogging = (value: boolean, reason: string) => {
+    console.log(`Setting showOptions to ${value}, reason: ${reason}`)
     setShowOptions(value)
   }
 
-  // Enhanced logging wrapper for setCurrentStep
   const setCurrentStepWithLogging = (step: StoryStep | null, reason: string) => {
+    console.log(`Setting currentStep, reason: ${reason}`, step)
     setCurrentStep(step)
   }
 
-  // Enhanced logging wrapper for setIsLoading
   const setIsLoadingWithLogging = (value: boolean, reason: string) => {
+    console.log(`Setting isLoading to ${value}, reason: ${reason}`)
     setIsLoading(value)
   }
 
-  // Simplified initialization - API handles deduplication
-  useEffect(() => {
-    const initializeStory = async () => {
-      if (isInitialized) return
+  const callStoryAPI = async (requestData: {
+    sessionId: string
+    choice?: number
+    storyName: string
+    language?: string
+  }): Promise<StoryResponse | null> => {
+    try {
+      console.log('Calling story API with data:', requestData)
 
-      setIsLoadingWithLogging(true, 'Story initialization')
+      const response = await fetch('/api/story', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData),
+      })
 
-      // Get or create session ID
-      const storageKey = `avventura_session_${storyName}`
-      let storedSessionId = localStorage.getItem(storageKey)
+      console.log('API response status:', response.status)
 
-      if (!storedSessionId) {
-        storedSessionId = generateSessionId()
-        localStorage.setItem(storageKey, storedSessionId)
-      } else {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
-      setSessionId(storedSessionId)
+      const data: StoryResponse = await response.json()
+      console.log('API response data:', data)
 
-      try {
-        // Load the first step
-        const response = await fetch('/api/story', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            sessionId: storedSessionId,
-            storyName,
-            language: 'Français', // Changed from 'fr' to 'Français'
-          }),
-        })
+      return data
+    } catch (error) {
+      console.error('Error calling story API:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to load story. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      })
+      return null
+    }
+  }
 
-        if (!response.ok) {
-          throw new Error('Failed to load story')
-        }
+  const initializeStory = async () => {
+    console.log('Initializing story for:', storyName)
+    setIsLoadingWithLogging(true, 'Story initialization started')
 
-        const data: StoryResponse = await response.json()
-        console.log('✅ data.nextSteps:', data.nextSteps)
+    try {
+      const newSessionId = generateSessionId()
+      console.log('Generated session ID:', newSessionId)
+      setSessionId(newSessionId)
 
-        if (data.success && data.currentStep) {
-          setCurrentStepWithLogging(data.currentStep, 'Initial story load')
-          setNextSteps(data.nextSteps || [])
-        } else {
-          throw new Error(data.error || 'Failed to generate story content')
-        }
-      } catch (error) {
-        console.error('❌ Error initializing story:', error)
+      const response = await callStoryAPI({
+        sessionId: newSessionId,
+        storyName: storyName,
+        language: 'français',
+      })
+
+      if (response && response.success) {
+        console.log('Story initialization successful')
+        setCurrentStepWithLogging(response.currentStep, 'Story initialized successfully')
+        setNextSteps(response.nextSteps)
+        setIsInitialized(true)
+      } else if (response) {
+        console.error('Story initialization failed:', response?.error || 'Unknown error')
         toast({
-          title: t.common.error,
-          description: "Impossible de charger l'histoire. Veuillez réessayer.",
+          title: 'Error',
+          description: response?.error || 'Failed to initialize story',
           status: 'error',
           duration: 5000,
           isClosable: true,
         })
-      } finally {
-        setIsLoadingWithLogging(false, 'Story initialization complete')
-        setIsInitialized(true)
       }
+    } catch (error) {
+      console.error('Error during story initialization:', error)
+      toast({
+        title: 'Error',
+        description: 'Failed to initialize story. Please try again.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      })
+    } finally {
+      setIsLoadingWithLogging(false, 'Story initialization completed')
+    }
+  }
+
+  // Simple effect that only runs once per storyName
+  useEffect(() => {
+    console.log(
+      'useEffect triggered, storyName:',
+      storyName,
+      'initializeOnce.current:',
+      initializeOnce.current
+    )
+
+    if (storyName && !initializeOnce.current) {
+      initializeOnce.current = true
+      console.log('Calling initializeStory')
+      initializeStory()
     }
 
-    initializeStory()
-  }, [storyName, isInitialized, toast, t.common.error])
+    // Don't reset the flag in cleanup - this was causing the double execution
+    // The flag should only reset when storyName actually changes
+  }, [storyName])
 
   const handleTypingComplete = useCallback(() => {
     setShowOptionsWithLogging(true, 'Typing animation completed')
   }, [])
 
   const nextStep = async (choice: number) => {
-    setShowOptionsWithLogging(false, `User selected option ${choice}`)
-
-    // Use the pre-loaded next step for immediate display
-    if (nextSteps && nextSteps.length >= choice) {
-      const immediateStep = nextSteps[choice - 1]
-
-      // Safety check for step structure - if invalid, fall back to API call
-      if (!immediateStep || !immediateStep.desc || !immediateStep.options) {
-        console.error('❌ Invalid pre-loaded step structure:', immediateStep)
-        // Don't return here, fall through to the API call below
-      } else {
-        // Valid pre-loaded step, use it immediately
-        setCurrentStepWithLogging(immediateStep, `Pre-loaded step for choice ${choice}`)
-        setNextSteps([])
-
-        // Start background loading for the next set of steps
-        setIsLoadingBackground(true)
-
-        try {
-          const response = await fetch('/api/story', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              sessionId,
-              choice,
-              storyName,
-              language: 'Français',
-            }),
-          })
-
-          if (response.ok) {
-            const data: StoryResponse = await response.json()
-            console.log('✅ data.nextSteps:', data.nextSteps)
-
-            if (data.success && data.nextSteps) {
-              setNextSteps(data.nextSteps)
-            } else {
-            }
-          } else {
-            console.warn(`⚠️ Background API failed with status: ${response.status}`)
-          }
-        } catch (error) {
-          console.warn('⚠️ Background loading error:', error)
-        } finally {
-          setIsLoadingBackground(false)
-        }
-
-        return // Only return here if we successfully used pre-loaded step
-      }
-    } else {
-    }
-
-    // Fallback: no pre-loaded steps or invalid steps, do immediate API call
-    setIsLoadingWithLogging(true, `Fallback API call for choice ${choice}`)
+    console.log('Next step called with choice:', choice)
+    setIsLoadingWithLogging(true, `User selected choice ${choice}`)
+    setShowOptionsWithLogging(false, 'Starting new choice processing')
 
     try {
-      const response = await fetch('/api/story', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          sessionId,
-          choice,
-          storyName,
-          language: 'Français',
-        }),
+      const response = await callStoryAPI({
+        sessionId: sessionId,
+        choice: choice,
+        storyName: storyName,
+        language: 'français',
       })
 
-      if (!response.ok) {
-        throw new Error(`Failed to get next step: ${response.status}`)
-      }
-
-      const data: StoryResponse = await response.json()
-      console.log('✅ data.nextSteps:', data.nextSteps)
-
-      if (data.success && data.currentStep) {
-        setCurrentStepWithLogging(data.currentStep, `Fallback API result for choice ${choice}`)
-        setNextSteps(data.nextSteps || [])
+      if (response && response.success) {
+        console.log('Next step successful')
+        setCurrentStepWithLogging(response.currentStep, `Choice ${choice} processed successfully`)
+        setNextSteps(response.nextSteps)
       } else {
-        throw new Error(data.error || 'Failed to generate next step')
+        console.error('Next step failed:', response?.error || 'Unknown error')
+        toast({
+          title: 'Error',
+          description: response?.error || 'Failed to process your choice',
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        })
       }
     } catch (error) {
-      console.error('❌ Error in fallback API call:', error)
-
-      // Re-show options if API call fails to prevent being stuck
-      setShowOptionsWithLogging(true, `Fallback API error recovery for choice ${choice}`)
-
+      console.error('Error during next step:', error)
       toast({
-        title: t.common.error,
-        description:
-          "Une erreur est survenue lors de la progression de l'histoire. Options restaurées.",
+        title: 'Error',
+        description: 'Failed to process your choice. Please try again.',
         status: 'error',
         duration: 5000,
         isClosable: true,
       })
     } finally {
-      setIsLoadingWithLogging(false, 'Fallback API call complete')
+      setIsLoadingWithLogging(false, 'Next step processing completed')
     }
   }
-
-  const resetStory = () => {
-    const storageKey = `avventura_session_${storyName}`
-    localStorage.removeItem(storageKey)
-    setSessionId('')
-    setCurrentStepWithLogging(null, 'Story reset')
-    setNextSteps([])
-    setShowOptionsWithLogging(false, 'Story reset')
-    setIsInitialized(false)
-    setIsLoadingBackground(false)
-  }
-
-  // Debug logging for render conditions
 
   if (!isInitialized || isLoading) {
     return (
@@ -305,7 +277,6 @@ export default function StoryPage() {
         >
           <VStack spacing={4}>
             <CustomLoader size={200} />
-            {/* <Text>Chargement de l&apos;aventure...</Text> */}
           </VStack>
         </Flex>
       </Container>
@@ -322,15 +293,10 @@ export default function StoryPage() {
           justify="center"
           align="center"
         >
-          {/* <VStack spacing={4}>
-            <Text>Erreur lors du chargement de l&apos;histoire</Text>
-            <Button onClick={resetStory} colorScheme="blue">
-              Recommencer
-            </Button>
-            <Link href="/">
-              <Button variant="outline">Retour à l&apos;accueil</Button>
-            </Link>
-          </VStack> */}
+          <VStack spacing={4}>
+            <Text>No story data available</Text>
+            <Button onClick={initializeStory}>Try Again</Button>
+          </VStack>
         </Flex>
       </Container>
     )
@@ -339,27 +305,6 @@ export default function StoryPage() {
   return (
     <Container maxW="container.sm" py={0} px={4}>
       <Flex flexDirection="column" height="calc(100vh - 72px)" width="100%">
-        {/* Back button */}
-        {/* <Box position="absolute" top={4} left={4} zIndex={10}>
-          <Link href="/">
-            <Button variant="ghost" size="sm">
-              ← Retour
-            </Button>
-          </Link>
-        </Box> */}
-
-        {/* Reset button with loading indicator */}
-        {/* <Box position="absolute" top={4} right={4} zIndex={10}>
-          <Button variant="ghost" size="sm" onClick={resetStory} isDisabled={isLoading}>
-            Recommencer
-          </Button>
-          {isLoadingBackground && (
-            <Box position="absolute" top={-1} right={-1}>
-              <CustomLoader size={16} />
-            </Box>
-          )}
-        </Box> */}
-
         <VStack spacing={4} flex={1} width="100%">
           <Box width="100%" overflowY="auto" marginBottom={4} marginTop={10}>
             <Text as="h4" fontSize="xl" fontWeight="medium" lineHeight="1.6">
