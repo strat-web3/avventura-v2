@@ -1,9 +1,7 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Container, Text, Button, useToast, Box, VStack, Flex } from '@chakra-ui/react'
-import { useAppKitAccount, useAppKitNetwork, useAppKitProvider } from '@reown/appkit/react'
-import { useTranslation } from '@/hooks/useTranslation'
+import React, { useState, useEffect, useRef } from 'react'
+import { Container, Text, Button, useToast, Box, VStack } from '@chakra-ui/react'
 import { useLanguage } from '@/context/LanguageContext'
 import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
@@ -14,253 +12,422 @@ interface Message {
   content: string
 }
 
-interface StoryRequest {
+interface PreloadRequest {
   sessionId: string
-  choice?: number
   storyName: string
   language?: string
-  forceRestart?: boolean
-  conversationHistory?: Message[]
+  conversationHistory: Message[]
+  choices: number[]
 }
 
 interface StoryStep {
   step?: number
   desc: string
   options: string[]
-  action?: string // Added action field
+  action?: string
 }
 
-interface StoryResponse {
-  sessionId?: string
-  currentStep: StoryStep
-  nextSteps: StoryStep[]
-  conversationHistory?: Message[]
-  success: boolean
-  error?: string
-  shouldRestart?: boolean
+interface StoryState {
+  sessionId: string
+  currentStep: StoryStep | null
+  conversationHistory: Message[]
+  isLoading: boolean
+  isTyping: boolean
+  displayText: string
+  isPreloading: boolean
+  preloadedSteps: Record<number, StoryStep>
+  showShimmer: boolean
 }
 
-const TypingText = styled.div`
-  white-space: pre-wrap;
-  overflow: hidden;
-  border-right: 0px solid;
+const ShimmerOverlay = styled.div<{ show: boolean }>`
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, #8c1c84, transparent);
+  animation: ${props => (props.show ? 'shimmer 1s ease-in-out' : 'none')};
+  pointer-events: none;
+
+  @keyframes shimmer {
+    0% {
+      left: -100%;
+    }
+    100% {
+      left: 100%;
+    }
+  }
 `
 
-interface TypingEffectProps {
-  text: string
-  speed?: number
-  onComplete: () => void
-}
+const FlashOverlay = styled.div<{ show: boolean }>`
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.3);
+  z-index: 999;
+  opacity: ${props => (props.show ? 1 : 0)};
+  transition: opacity 0.5s ease;
+  pointer-events: none;
+`
 
-const TypingEffect: React.FC<TypingEffectProps> = ({ text, speed = 10, onComplete }) => {
-  const [displayedText, setDisplayedText] = useState('')
+const OptionContainer = styled(Box)<{ disabled: boolean }>`
+  position: relative;
+  overflow: hidden;
+  pointer-events: ${props => (props.disabled ? 'none' : 'auto')};
+`
 
-  useEffect(() => {
-    setDisplayedText('')
-    let i = 0
-    const typingInterval = setInterval(() => {
-      if (i < text.length) {
-        setDisplayedText(text.slice(0, i + 1))
-        i++
-      } else {
-        clearInterval(typingInterval)
-        onComplete()
-      }
-    }, speed)
+const StoryContainer = styled(Container)`
+  max-width: 600px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
+  padding: 20px;
+  padding-top: 50px;
+  position: relative;
+`
 
-    return () => clearInterval(typingInterval)
-  }, [text, speed, onComplete])
+const TypingText = styled(Text)`
+  font-size: 20px;
+  line-height: 1.6;
+  margin-bottom: 30px;
+  text-align: left;
+  min-height: 200px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 3px;
+  width: 100%;
+`
 
-  return <TypingText>{displayedText}</TypingText>
-}
+const OptionsGrid = styled(VStack)`
+  width: 100%;
+  gap: 18px;
+  align-items: stretch;
+`
 
-const CustomLoader: React.FC<{ size?: number }> = ({ size = 60 }) => {
-  return (
-    <Box
-      display="flex"
-      justifyContent="center"
-      alignItems="center"
-      width={`${size}px`}
-      height={`${size}px`}
-    >
-      <Box as="img" src="/loader.svg" alt="Loading..." width={`${size}px`} height={`${size}px`} />
-    </Box>
-  )
-}
+const OptionButton = styled(Button)`
+  width: 100%;
+  max-width: none;
+  padding: 10px 14px;
+  font-size: 16px;
+  background: transparent;
+  color: white;
+  border: 2px solid #45a2f8;
+  border-radius: 10px;
+  transition: all 0.3s ease;
+  white-space: normal;
+  word-wrap: break-word;
+  min-height: 60px;
+  height: auto;
+  line-height: 1.4;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
 
-const generateSessionId = (): string => {
-  return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-}
-
-// ✅ FIXED: Send English language names to match API expectations
-const getLanguageForAPI = (languageCode: string): string => {
-  const languageMap: Record<string, string> = {
-    en: 'English',
-    zh: 'Chinese', // ✅ English name (not 中文)
-    hi: 'Hindi', // ✅ English name (not हिन्दी)
-    es: 'Spanish', // ✅ English name (not Español)
-    fr: 'French', // ✅ English name (not français)
-    ar: 'Arabic', // ✅ English name (not العربية)
-    bn: 'Bengali', // ✅ English name (not বাংলা)
-    ru: 'Russian', // ✅ English name (not Русский)
-    pt: 'Portuguese', // ✅ English name (not Português)
-    ur: 'Urdu', // ✅ English name (not اردو)
+  &:hover:not(:disabled) {
+    background: rgba(140, 28, 132, 0.1);
+    border-color: #8c1c84;
   }
 
-  return languageMap[languageCode] || 'French' // ✅ English fallback
+  &:disabled {
+    opacity: 1;
+    cursor: not-allowed;
+    color: #45a2f8;
+    border-color: white;
+  }
+
+  & > * {
+    text-align: left;
+    width: 100%;
+  }
+`
+
+const LoadingBox = styled(Box)`
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+`
+
+const LoadingSpinner = styled.div`
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.3);
+  border-top: 3px solid #fff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+
+  @keyframes spin {
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
+  }
+`
+
+// Map frontend language codes to API language names
+const getLanguageName = (langCode: string): string => {
+  const mapping: Record<string, string> = {
+    en: 'English',
+    zh: 'Chinese',
+    hi: 'Hindi',
+    es: 'Spanish',
+    fr: 'French',
+    ar: 'Arabic',
+    bn: 'Bengali',
+    ru: 'Russian',
+    pt: 'Portuguese',
+    ur: 'Urdu',
+  }
+  return mapping[langCode] || 'French'
+}
+
+// Local storage functions
+const saveConversationHistory = (sessionId: string, history: Message[]) => {
+  try {
+    localStorage.setItem(`conversation_${sessionId}`, JSON.stringify(history))
+  } catch (error) {
+    console.error('Failed to save conversation history:', error)
+  }
+}
+
+const loadConversationHistory = (sessionId: string): Message[] => {
+  try {
+    const stored = localStorage.getItem(`conversation_${sessionId}`)
+    return stored ? JSON.parse(stored) : []
+  } catch (error) {
+    console.error('Failed to load conversation history:', error)
+    return []
+  }
+}
+
+// Create heart element for milestone celebration
+const createHeart = () => {
+  const heart = document.createElement('div')
+  heart.innerText = '❤️'
+  heart.style.position = 'fixed'
+  heart.style.fontSize = `${Math.random() * 30 + 30}px`
+  heart.style.left = `${Math.random() * 100}vw`
+  heart.style.top = '-30px'
+  heart.style.zIndex = '1000'
+  heart.style.userSelect = 'none'
+  heart.style.pointerEvents = 'none'
+
+  const duration = 5
+
+  // Apply animation
+  heart.animate(
+    [
+      {
+        transform: `translate(0, 0) rotate(0deg)`,
+        opacity: 1,
+      },
+      {
+        transform: `translate(${Math.random() * 10 - 5}px, ${window.innerHeight * 0.5}px) rotate(${Math.random() * 60 - 30}deg)`,
+        opacity: 1,
+      },
+      {
+        transform: `translate(${Math.random() * 20 - 10}px, ${window.innerHeight + 50}px) rotate(${Math.random() * 100 - 50}deg)`,
+        opacity: 0,
+      },
+    ],
+    {
+      duration: duration * 1000,
+      easing: 'cubic-bezier(0.1, 0.8, 0.8, 1)',
+      fill: 'forwards',
+    }
+  )
+
+  document.body.appendChild(heart)
+
+  // Remove the heart element when animation completes
+  setTimeout(() => {
+    if (heart.parentNode) {
+      heart.parentNode.removeChild(heart)
+    }
+  }, duration * 1000)
+}
+
+// Trigger milestone celebration
+const triggerMilestoneCelebration = () => {
+  console.log('🎉 Starting milestone celebration!')
+
+  for (let i = 0; i < 150; i++) {
+    setTimeout(() => createHeart(), i * 20)
+  }
+}
+
+// Typing effect component
+const TypingEffect: React.FC<{
+  text: string
+  speed?: number
+  onComplete?: () => void
+}> = ({ text, speed = 50, onComplete }) => {
+  const [displayText, setDisplayText] = useState('')
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [isComplete, setIsComplete] = useState(false)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const onCompleteRef = useRef(onComplete)
+
+  // Update the ref when onComplete changes
+  useEffect(() => {
+    onCompleteRef.current = onComplete
+  }, [onComplete])
+
+  // Reset when text changes
+  useEffect(() => {
+    setDisplayText('')
+    setCurrentIndex(0)
+    setIsComplete(false)
+  }, [text])
+
+  // Handle typing animation
+  useEffect(() => {
+    if (currentIndex < text.length) {
+      timeoutRef.current = setTimeout(() => {
+        setDisplayText(prev => prev + text[currentIndex])
+        setCurrentIndex(prev => prev + 1)
+      }, speed)
+    } else if (currentIndex === text.length && !isComplete) {
+      setIsComplete(true)
+      if (onCompleteRef.current) {
+        onCompleteRef.current()
+      }
+    }
+
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [currentIndex, text.length, speed, isComplete])
+
+  return <span>{displayText}</span>
 }
 
 export default function StoryPage() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [showOptions, setShowOptions] = useState(false)
-  const [currentStep, setCurrentStep] = useState<StoryStep | null>(null)
-  const [nextSteps, setNextSteps] = useState<StoryStep[]>([])
-  const [sessionId, setSessionId] = useState<string>('')
-  const [isInitialized, setIsInitialized] = useState(false)
-  const [conversationHistory, setConversationHistory] = useState<Message[]>([])
-
-  // Simple ref to prevent duplicate initialization in React Strict Mode
-  const initializeOnce = useRef(false)
-  const currentStoryName = useRef<string>('')
-
-  const { language } = useLanguage() // Get current language
-  const toast = useToast()
-  const t = useTranslation()
   const params = useParams()
-  const storyName = params.storyName as string
+  const toast = useToast()
+  const { language } = useLanguage()
+  const [state, setState] = useState<StoryState>({
+    sessionId: '',
+    currentStep: null,
+    conversationHistory: [],
+    isLoading: false,
+    isTyping: true,
+    displayText: '',
+    isPreloading: false,
+    preloadedSteps: {},
+    showShimmer: false,
+  })
+  const [showFlash, setShowFlash] = useState(false)
 
-  // Reset the flag only when storyName actually changes
-  if (currentStoryName.current !== storyName) {
-    console.log('Story name changed from', currentStoryName.current, 'to', storyName)
-    currentStoryName.current = storyName
-    initializeOnce.current = false
-  }
+  const languageName = getLanguageName(language)
+  const storyName = Array.isArray(params?.storyName) ? params.storyName[0] : params?.storyName || ''
 
-  const setShowOptionsWithLogging = (value: boolean, reason: string) => {
-    console.log(`Setting showOptions to ${value}, reason: ${reason}`)
-    setShowOptions(value)
-  }
+  // Initialize story session
+  useEffect(() => {
+    if (!storyName) return
 
-  // Create heart element for milestone celebration
-  const createHeart = () => {
-    const heart = document.createElement('div')
-    heart.innerText = '❤️'
-    heart.style.position = 'fixed'
-    heart.style.fontSize = `${Math.random() * 20 + 20}px`
-    heart.style.left = `${Math.random() * 100}vw`
-    heart.style.top = '-30px'
-    heart.style.zIndex = '1000'
-    heart.style.userSelect = 'none'
-    heart.style.pointerEvents = 'none'
+    const sessionId = SessionManager.getOrCreateSessionId(storyName)
+    const savedHistory = loadConversationHistory(sessionId)
 
-    // Set random animation properties
-    const duration = Math.random() * 2 + 2 // 2-4 seconds
+    setState(prev => ({
+      ...prev,
+      sessionId,
+      conversationHistory: savedHistory,
+    }))
 
-    // Apply animation
-    heart.animate(
-      [
-        {
-          transform: `translate(0, 0) rotate(0deg)`,
-          opacity: 1,
-        },
-        {
-          transform: `translate(${Math.random() * 10 - 5}px, ${window.innerHeight * 0.5}px) rotate(${Math.random() * 60 - 30}deg)`,
-          opacity: 1,
-        },
-        {
-          transform: `translate(${Math.random() * 20 - 10}px, ${window.innerHeight + 50}px) rotate(${Math.random() * 100 - 50}deg)`,
-          opacity: 0,
-        },
-      ],
-      {
-        duration: duration * 1000,
-        easing: 'cubic-bezier(0.1, 0.8, 0.8, 1)',
-        fill: 'forwards',
-      }
-    )
-
-    document.body.appendChild(heart)
-
-    // Remove the heart element when animation completes
-    setTimeout(() => {
-      if (heart.parentNode) {
-        heart.parentNode.removeChild(heart)
-      }
-    }, duration * 1000)
-  }
-
-  // Trigger milestone celebration
-  const triggerMilestoneCelebration = () => {
-    console.log('🎉 Starting milestone celebration!')
-
-    // Create 150 trophy emojis over 3 seconds
-    for (let i = 0; i < 150; i++) {
-      setTimeout(() => createHeart(), i * 20) // One every 20ms for 3 seconds
+    if (savedHistory.length > 0) {
+      // Load from saved conversation
+      loadFromHistory(sessionId, savedHistory)
+    } else {
+      // Start new story
+      loadInitialStory(sessionId)
     }
-  }
+  }, [storyName, language])
 
-  const setCurrentStepWithLogging = (step: StoryStep | null, reason: string) => {
-    console.log(`Setting currentStep, reason: ${reason}`, step)
-
-    // Log action if present
-    if (step?.action) {
-      console.log(`🎯 Action: ${step.action}`)
-
-      // Special handling for milestones
-      if (step.action === 'milestone') {
-        console.log('🏆 MILESTONE REACHED!')
-        // Trigger the celebration effect
-        triggerMilestoneCelebration()
-      }
-    }
-
-    setCurrentStep(step)
-  }
-
-  const setIsLoadingWithLogging = (value: boolean, reason: string) => {
-    console.log(`Setting isLoading to ${value}, reason: ${reason}`)
-    setIsLoading(value)
-  }
-
-  const callStoryAPI = async (requestData: StoryRequest): Promise<StoryResponse | null> => {
-    const startTime = performance.now()
+  const loadFromHistory = async (sessionId: string, history: Message[]) => {
+    setState(prev => ({ ...prev, isLoading: true }))
 
     try {
-      console.log('Calling story API with data:', {
-        ...requestData,
-        conversationHistoryLength: requestData.conversationHistory?.length || 0,
-      })
-
       const response = await fetch('/api/story', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(requestData),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          storyName,
+          language: languageName,
+          conversationHistory: history,
+        }),
       })
 
-      const endTime = performance.now()
-      const durationSeconds = ((endTime - startTime) / 1000).toFixed(2)
+      const data = await response.json()
 
-      console.log(`📊 API Call completed in ${durationSeconds} seconds`)
-      console.log('API response status:', response.status)
+      if (data.success) {
+        setState(prev => ({
+          ...prev,
+          currentStep: data.currentStep,
+          conversationHistory: data.conversationHistory,
+          isLoading: false,
+          isTyping: true,
+        }))
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        // Start preloading after loading from history
+        startPreloading(sessionId, data.conversationHistory)
+      } else {
+        throw new Error(data.error || 'Failed to load from history')
       }
+    } catch (error) {
+      console.error('Error loading from history:', error)
+      // Fallback to new story
+      loadInitialStory(sessionId)
+    }
+  }
 
-      const data: StoryResponse = await response.json()
-      console.log('API response data:', {
-        ...data,
-        conversationHistoryLength: data.conversationHistory?.length || 0,
+  const loadInitialStory = async (sessionId: string) => {
+    setState(prev => ({ ...prev, isLoading: true }))
+
+    try {
+      const response = await fetch('/api/story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          storyName,
+          language: languageName,
+          forceRestart: true,
+        }),
       })
 
-      return data
-    } catch (error) {
-      const endTime = performance.now()
-      const durationSeconds = ((endTime - startTime) / 1000).toFixed(2)
+      const data = await response.json()
 
-      console.error(`❌ API Call failed after ${durationSeconds} seconds:`, error)
+      if (data.success) {
+        const newHistory = data.conversationHistory
+        saveConversationHistory(sessionId, newHistory)
+
+        setState(prev => ({
+          ...prev,
+          currentStep: data.currentStep,
+          conversationHistory: newHistory,
+          isLoading: false,
+          isTyping: true,
+        }))
+
+        // Start preloading after initial story loads
+        startPreloading(sessionId, newHistory)
+      } else {
+        throw new Error(data.error || 'Failed to load story')
+      }
+    } catch (error) {
+      console.error('Error loading story:', error)
       toast({
         title: 'Error',
         description: 'Failed to load story. Please try again.',
@@ -268,311 +435,218 @@ export default function StoryPage() {
         duration: 5000,
         isClosable: true,
       })
-      return null
+      setState(prev => ({ ...prev, isLoading: false }))
     }
   }
 
-  // Load conversation history from localStorage
-  const loadConversationHistory = (storyName: string, sessionId: string): Message[] => {
-    if (typeof window === 'undefined') return []
-
+  const startPreloading = async (sessionId: string, conversationHistory: Message[]) => {
     try {
-      const key = `conversation_${storyName}_${sessionId}`
-      const stored = localStorage.getItem(key)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        console.log(`Loaded conversation history: ${parsed.length} messages`)
-        return parsed
-      }
-    } catch (error) {
-      console.error('Error loading conversation history:', error)
-    }
-    return []
-  }
+      setState(prev => ({ ...prev, isPreloading: true }))
 
-  // Save conversation history to localStorage
-  const saveConversationHistory = (storyName: string, sessionId: string, history: Message[]) => {
-    if (typeof window === 'undefined') return
-
-    try {
-      const key = `conversation_${storyName}_${sessionId}`
-      localStorage.setItem(key, JSON.stringify(history))
-      console.log(`Saved conversation history: ${history.length} messages`)
-    } catch (error) {
-      console.error('Error saving conversation history:', error)
-    }
-  }
-
-  // Updated initializeStory function
-  const initializeStory = async () => {
-    console.log('Initializing story for:', storyName, 'with language:', language)
-    setIsLoadingWithLogging(true, 'Story initialization started')
-
-    try {
-      // Try to load existing session from localStorage
-      let existingSessionId: string | null = null
-      if (typeof window !== 'undefined') {
-        existingSessionId = SessionManager.getSessionForStory(storyName)
+      const preloadRequest: PreloadRequest = {
+        sessionId,
+        storyName,
+        language: languageName,
+        conversationHistory,
+        choices: [1, 2, 3],
       }
 
-      let sessionToUse: string
-      let existingHistory: Message[] = []
+      const response = await fetch('/api/story/preload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(preloadRequest),
+      })
 
-      if (existingSessionId) {
-        console.log('Found existing session in localStorage:', existingSessionId)
-        sessionToUse = existingSessionId
-        // Load conversation history
-        existingHistory = loadConversationHistory(storyName, existingSessionId)
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('✅ Preloading completed:', data.summary)
+        setState(prev => ({
+          ...prev,
+          preloadedSteps: data.preloadedSteps,
+          isPreloading: false,
+          showShimmer: true,
+        }))
+
+        // Hide shimmer after animation
+        setTimeout(() => {
+          setState(prev => ({ ...prev, showShimmer: false }))
+        }, 1500)
       } else {
-        // No existing session, create new one
-        console.log('No existing session found, creating new one')
-        if (typeof window !== 'undefined') {
-          sessionToUse = SessionManager.createNewSessionForStory(storyName)
-        } else {
-          sessionToUse = generateSessionId()
-        }
-      }
-
-      setSessionId(sessionToUse)
-      setConversationHistory(existingHistory)
-
-      // Get language for API call with fallback
-      const apiLanguage = getLanguageForAPI(language)
-      console.log(`🐛 DEBUG - About to call API with:`, {
-        language: language,
-        apiLanguage: apiLanguage,
-        storyName: storyName,
-      })
-
-      // Make API call with existing conversation history
-      const response = await callStoryAPI({
-        sessionId: sessionToUse,
-        storyName: storyName,
-        language: apiLanguage, // Use detected language with fallback
-        conversationHistory: existingHistory,
-        forceRestart: false,
-      })
-
-      if (response && response.success) {
-        console.log('Story initialization successful')
-        setCurrentStepWithLogging(response.currentStep, 'Story initialized successfully')
-        setNextSteps(response.nextSteps)
-        setIsInitialized(true)
-
-        // Update conversation history from response
-        if (response.conversationHistory) {
-          setConversationHistory(response.conversationHistory)
-          saveConversationHistory(storyName, sessionToUse, response.conversationHistory)
-        }
-
-        // Update session data in localStorage
-        if (typeof window !== 'undefined') {
-          SessionManager.storeSessionData(sessionToUse, {
-            sessionId: sessionToUse,
-            storyName: storyName,
-            currentStep: response.currentStep.step || 1,
-          })
-        }
-      } else if (response) {
-        console.error('Story initialization failed:', response?.error || 'Unknown error')
-        toast({
-          title: 'Error',
-          description: response?.error || 'Failed to initialize story',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        })
+        console.warn('⚠️ Preloading failed:', data.error)
+        setState(prev => ({ ...prev, isPreloading: false }))
       }
     } catch (error) {
-      console.error('Error during story initialization:', error)
+      console.error('❌ Preloading error:', error)
+      setState(prev => ({ ...prev, isPreloading: false }))
+    }
+  }
+
+  const handleChoice = async (choiceNumber: number) => {
+    if (state.isLoading || state.isPreloading || state.isTyping) return
+
+    // Check if we have preloaded data for this choice
+    const preloadedStep = state.preloadedSteps[choiceNumber]
+
+    if (preloadedStep) {
+      console.log(`🚀 Using preloaded data for choice ${choiceNumber}`)
+
+      // Update conversation history with the choice
+      const newHistory: Message[] = [
+        ...state.conversationHistory,
+        { role: 'user', content: `Choice ${choiceNumber}` },
+        {
+          role: 'assistant',
+          content: JSON.stringify({
+            desc: preloadedStep.desc,
+            options: preloadedStep.options,
+            action: preloadedStep.action,
+          }),
+        },
+      ]
+
+      // Save conversation history
+      saveConversationHistory(state.sessionId, newHistory)
+
+      setState(prev => ({
+        ...prev,
+        currentStep: preloadedStep,
+        conversationHistory: newHistory,
+        preloadedSteps: {}, // Clear preloaded steps
+        showShimmer: false,
+        isTyping: true,
+      }))
+
+      // Update session storage
+      SessionManager.updateLastAccessed(state.sessionId)
+
+      // Start preloading for the next set of choices
+      startPreloading(state.sessionId, newHistory)
+
+      return
+    }
+
+    // Fallback to API call if no preloaded data
+    setState(prev => ({ ...prev, isLoading: true }))
+
+    try {
+      const response = await fetch('/api/story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: state.sessionId,
+          choice: choiceNumber,
+          storyName,
+          language: languageName,
+          conversationHistory: state.conversationHistory,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        const newHistory =
+          data.conversationHistory.length > 0 ? data.conversationHistory : state.conversationHistory
+
+        // Save conversation history
+        saveConversationHistory(state.sessionId, newHistory)
+
+        setState(prev => ({
+          ...prev,
+          currentStep: data.currentStep,
+          conversationHistory: newHistory,
+          isLoading: false,
+          isTyping: true,
+          preloadedSteps: {}, // Clear preloaded steps
+        }))
+
+        SessionManager.updateLastAccessed(state.sessionId)
+
+        // Start preloading for the next set of choices
+        startPreloading(state.sessionId, newHistory)
+      } else {
+        throw new Error(data.error || 'Failed to process choice')
+      }
+    } catch (error) {
+      console.error('Error processing choice:', error)
       toast({
-        title: 'Error',
-        description: 'Failed to initialize story. Please try again.',
-        status: 'error',
+        title: 'Wooops',
+        description: 'Something went wrong. Sorry for that! Please try again.',
+        status: 'info',
         duration: 5000,
         isClosable: true,
       })
-    } finally {
-      setIsLoadingWithLogging(false, 'Story initialization completed')
+      setState(prev => ({ ...prev, isLoading: false }))
     }
   }
 
-  // Simple effect that only runs once per storyName
-  useEffect(() => {
-    console.log(
-      'useEffect triggered, storyName:',
-      storyName,
-      'language:',
-      language,
-      'initializeOnce.current:',
-      initializeOnce.current
-    )
+  const handleTypingComplete = () => {
+    setState(prev => ({ ...prev, isTyping: false }))
 
-    if (storyName && !initializeOnce.current) {
-      initializeOnce.current = true
-      console.log('Calling initializeStory')
-      initializeStory()
-    }
-  }, [storyName, language]) // Include language in dependencies
+    // Log action if present and trigger celebration when description appears
+    if (state.currentStep?.action) {
+      console.log(`🎯 Action: ${state.currentStep.action}`)
 
-  const handleTypingComplete = useCallback(() => {
-    setShowOptionsWithLogging(true, 'Typing animation completed')
-  }, [])
-
-  const nextStep = async (choice: number) => {
-    console.log('Next step called with choice:', choice, 'language:', language)
-    setIsLoadingWithLogging(true, `User selected choice ${choice}`)
-    setShowOptionsWithLogging(false, 'Starting new choice processing')
-
-    try {
-      // Get language for API call with fallback
-      const apiLanguage = getLanguageForAPI(language)
-      console.log(`Using language for API: ${apiLanguage} (from browser language: ${language})`)
-
-      const response = await callStoryAPI({
-        sessionId: sessionId,
-        choice: choice,
-        storyName: storyName,
-        language: apiLanguage,
-        conversationHistory: conversationHistory, // Send conversation history to indicate this is NOT a new conversation
-      })
-
-      if (response && response.success) {
-        console.log('Next step successful')
-        setCurrentStepWithLogging(response.currentStep, `Choice ${choice} processed successfully`)
-        setNextSteps(response.nextSteps)
-
-        // Update conversation history from response
-        if (response.conversationHistory) {
-          setConversationHistory(response.conversationHistory)
-          saveConversationHistory(storyName, sessionId, response.conversationHistory)
-        }
-
-        // Update session data in localStorage
-        if (typeof window !== 'undefined') {
-          SessionManager.storeSessionData(sessionId, {
-            sessionId: sessionId,
-            storyName: storyName,
-            currentStep: response.currentStep.step || 1,
-          })
-        }
-      } else {
-        console.error('Next step failed:', response?.error || 'Unknown error')
-        toast({
-          title: 'Error',
-          description: response?.error || 'Failed to process your choice',
-          status: 'error',
-          duration: 5000,
-          isClosable: true,
-        })
+      // Special handling for milestones
+      if (state.currentStep.action === 'milestone') {
+        console.log('🏆 MILESTONE REACHED!')
+        // Trigger the celebration effect
+        triggerMilestoneCelebration()
       }
-    } catch (error) {
-      console.error('Error during next step:', error)
-      toast({
-        title: 'Error',
-        description: 'Failed to process your choice. Please try again.',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      })
-    } finally {
-      setIsLoadingWithLogging(false, 'Next step processing completed')
     }
   }
 
-  if (!isInitialized || isLoading) {
+  if (state.isLoading && !state.currentStep) {
     return (
-      <Container maxW="container.sm" py={0} px={4}>
-        <Flex
-          flexDirection="column"
-          height="calc(100vh - 72px)"
-          width="100%"
-          justify="center"
-          align="center"
-        >
-          <VStack spacing={4}>
-            <CustomLoader size={200} />
-          </VStack>
-        </Flex>
-      </Container>
+      <StoryContainer>
+        <LoadingBox>
+          <LoadingSpinner />
+        </LoadingBox>
+      </StoryContainer>
     )
   }
 
-  if (!currentStep) {
+  if (!state.currentStep) {
     return (
-      <Container maxW="container.sm" py={0} px={4}>
-        <Flex
-          flexDirection="column"
-          height="calc(100vh - 72px)"
-          width="100%"
-          justify="center"
-          align="center"
-        >
-          <VStack spacing={4}>
-            <Text>No story data available</Text>
-            <Button onClick={initializeStory}>Try Again</Button>
-          </VStack>
-        </Flex>
-      </Container>
+      <StoryContainer>
+        <LoadingBox>
+          <LoadingSpinner />
+        </LoadingBox>
+      </StoryContainer>
     )
   }
+
+  const isChoiceDisabled = state.isLoading || state.isPreloading || state.isTyping
 
   return (
-    <Container maxW="container.sm" py={0} px={4}>
-      <Flex flexDirection="column" height="calc(100vh - 72px)" width="100%">
-        <VStack spacing={4} flex={1} width="100%">
-          <Box width="100%" overflowY="auto" marginBottom={4} marginTop={10}>
-            <Text as="h4" fontSize="xl" fontWeight="medium" lineHeight="1.6">
-              <TypingEffect text={currentStep.desc} onComplete={handleTypingComplete} />
-            </Text>
-          </Box>
+    <>
+      <FlashOverlay show={showFlash} />
+      <StoryContainer>
+        <TypingText>
+          <TypingEffect text={state.currentStep.desc} speed={5} onComplete={handleTypingComplete} />
+        </TypingText>
 
-          {showOptions && !isLoading && (
-            <>
-              <VStack spacing={4} width="100%">
-                {currentStep.options.map((option, index) => {
-                  return (
-                    <Box
-                      key={index}
-                      width="100%"
-                      borderRadius="lg"
-                      p={4}
-                      borderWidth="2px"
-                      borderColor="gray.600"
-                      onClick={() => nextStep(index + 1)}
-                      cursor="pointer"
-                      _hover={{
-                        borderColor: '#8c1c84',
-                        boxShadow: 'md',
-                      }}
-                      transition="all 0.2s"
-                      bg="gray.800"
-                      position="relative"
-                    >
-                      <Text
-                        fontSize="lg"
-                        fontWeight="medium"
-                        color="#45a2f8"
-                        _hover={{ color: '#45a2f8' }}
-                      >
-                        {option}
-                      </Text>
-                    </Box>
-                  )
-                })}
-              </VStack>
-            </>
-          )}
+        {!state.isTyping && (
+          <OptionsGrid>
+            {state.currentStep.options.map((option, index) => (
+              <OptionContainer
+                key={index}
+                disabled={isChoiceDisabled}
+                onClick={() => !isChoiceDisabled && handleChoice(index + 1)}
+              >
+                <OptionButton disabled={isChoiceDisabled}>{option}</OptionButton>
+                <ShimmerOverlay show={state.showShimmer} />
+              </OptionContainer>
+            ))}
+          </OptionsGrid>
+        )}
 
-          {isLoading && showOptions && (
-            <>
-              <Flex justify="center" align="center" width="100%" py={8}>
-                <CustomLoader size={60} />
-              </Flex>
-            </>
-          )}
-        </VStack>
-      </Flex>
-    </Container>
+        {state.isLoading && !state.currentStep && (
+          <LoadingBox>
+            <LoadingSpinner />
+          </LoadingBox>
+        )}
+      </StoryContainer>
+    </>
   )
 }
