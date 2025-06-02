@@ -45,8 +45,8 @@ const ShimmerOverlay = styled.div<{ show: boolean }>`
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.05), transparent);
-  animation: ${props => (props.show ? 'shimmer 2.5s ease-in-out' : 'none')};
+  background: linear-gradient(90deg, transparent, #8c1c84, transparent);
+  animation: ${props => (props.show ? 'shimmer 1s ease-in-out' : 'none')};
   pointer-events: none;
 
   @keyframes shimmer {
@@ -135,8 +135,10 @@ const OptionButton = styled(Button)`
   }
 
   &:disabled {
-    opacity: 0.5;
+    opacity: 1;
     cursor: not-allowed;
+    color: #45a2f8;
+    border-color: white;
   }
 
   & > * {
@@ -568,9 +570,9 @@ export default function StoryPage() {
     } catch (error) {
       console.error('Error processing choice:', error)
       toast({
-        title: 'Error',
-        description: 'Failed to process your choice. Please try again.',
-        status: 'error',
+        title: 'Wooops',
+        description: 'Something went wrong. Sorry for that! Please try again.',
+        status: 'info',
         duration: 5000,
         isClosable: true,
       })
