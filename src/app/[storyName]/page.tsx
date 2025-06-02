@@ -92,21 +92,22 @@ const generateSessionId = (): string => {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
+// ✅ FIXED: Send English language names to match API expectations
 const getLanguageForAPI = (languageCode: string): string => {
   const languageMap: Record<string, string> = {
     en: 'English',
-    zh: '中文',
-    hi: 'हिन्दी',
-    es: 'Español',
-    fr: 'français',
-    ar: 'العربية',
-    bn: 'বাংলা',
-    ru: 'Русский',
-    pt: 'Português',
-    ur: 'اردو',
+    zh: 'Chinese', // ✅ English name (not 中文)
+    hi: 'Hindi', // ✅ English name (not हिन्दी)
+    es: 'Spanish', // ✅ English name (not Español)
+    fr: 'French', // ✅ English name (not français)
+    ar: 'Arabic', // ✅ English name (not العربية)
+    bn: 'Bengali', // ✅ English name (not বাংলা)
+    ru: 'Russian', // ✅ English name (not Русский)
+    pt: 'Portuguese', // ✅ English name (not Português)
+    ur: 'Urdu', // ✅ English name (not اردو)
   }
 
-  return languageMap[languageCode] || 'français'
+  return languageMap[languageCode] || 'French' // ✅ English fallback
 }
 
 export default function StoryPage() {
@@ -337,7 +338,11 @@ export default function StoryPage() {
 
       // Get language for API call with fallback
       const apiLanguage = getLanguageForAPI(language)
-      console.log(`Using language for API: ${apiLanguage} (from browser language: ${language})`)
+      console.log(`🐛 DEBUG - About to call API with:`, {
+        language: language,
+        apiLanguage: apiLanguage,
+        storyName: storyName,
+      })
 
       // Make API call with existing conversation history
       const response = await callStoryAPI({

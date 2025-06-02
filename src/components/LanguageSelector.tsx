@@ -67,7 +67,7 @@ const LanguageSelector: React.FC = () => {
         variant="ghost"
         size="sm"
       />
-      <MenuList maxH="300px" overflowY="auto" minWidth="auto">
+      <MenuList maxH="500px" overflowY="auto" minWidth="auto">
         {languageInfo.map(({ code, name }) => (
           <MenuItem
             key={code}
