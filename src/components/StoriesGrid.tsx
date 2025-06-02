@@ -1,21 +1,22 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { Box, Grid, VStack, Text, Button, useColorModeValue } from '@chakra-ui/react'
+import { Box, VStack, Text, Button, useColorModeValue, Alert, AlertIcon } from '@chakra-ui/react'
 import { FaArrowRight } from 'react-icons/fa'
 import { SessionManager } from '@/app/utils/sessionStorage'
 import { useLanguage } from '@/context/LanguageContext'
 import { useTranslation } from '@/hooks/useTranslation'
-import { getFeaturedStories } from '../translations/stories'
+import { useState, useEffect } from 'react'
+import Image from 'next/image'
 
-interface Story {
-  name: string
+interface StoryDisplayData {
   slug: string
+  title: string
   description: string
 }
 
 interface StoryBoxProps {
-  story: Story
+  story: StoryDisplayData
   onClick: (slug: string) => void
   buttonText: string
 }
@@ -42,7 +43,7 @@ const StoryBox: React.FC<StoryBoxProps> = ({ story, onClick, buttonText }) => {
     >
       <VStack spacing={4} align="flex-start">
         <Text fontSize="xl" fontWeight="bold">
-          {story.name}
+          {story.title}
         </Text>
         <Text color="gray.500" minHeight="3em">
           {story.description}
@@ -60,8 +61,9 @@ const StoriesGrid: React.FC = () => {
   const { language } = useLanguage()
   const t = useTranslation()
 
-  // Get stories for current language
-  const stories = getFeaturedStories(language)
+  const [stories, setStories] = useState<StoryDisplayData[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Get button text based on language
   const getButtonText = (lang: string): string => {
@@ -80,8 +82,141 @@ const StoriesGrid: React.FC = () => {
     return buttonTexts[lang] || buttonTexts.fr
   }
 
+  // Fetch stories from database (single entry per story)
+  useEffect(() => {
+    const fetchStories = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        console.log(`🔍 Fetching stories...`)
+
+        // Fetch stories from the new single-entry API
+        const response = await fetch(`/api/admin/stories/homepage?language=${language}`)
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        }
+
+        const data = await response.json()
+
+        if (!data.success) {
+          throw new Error(data.error || 'Failed to fetch stories')
+        }
+
+        // Stories are already in the correct format from the API
+        setStories(data.stories)
+        console.log(`✅ Loaded ${data.stories.length} stories`)
+      } catch (error) {
+        console.error('❌ Error fetching stories:', error)
+        setError(error instanceof Error ? error.message : 'Failed to load stories')
+
+        // Fallback to hardcoded stories if database fails
+        console.log('🔄 Falling back to hardcoded stories')
+        setStories(getFallbackStories(language))
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchStories()
+  }, [language])
+
+  // Fallback stories with proper translations (matches your provided data)
+  const getFallbackStories = (lang: string): StoryDisplayData[] => {
+    const fallbackTranslations: Record<string, StoryDisplayData[]> = {
+      fr: [
+        {
+          slug: 'montpellier',
+          title: 'Montpellier Médiéval',
+          description: 'Explorez la vie médiévale à Montpellier au 10ème siècle!',
+        },
+        {
+          slug: 'cretace',
+          title: 'Crétacé Sup',
+          description: "Découvrez l'univers fascinant des pectinidés!",
+        },
+        {
+          slug: 'truman',
+          title: 'The Truman Show',
+          description:
+            'Découvrez le monde réel pour la première fois après une vie dans une émission de télé!',
+        },
+        {
+          slug: 'kingston',
+          title: 'À Kingston Town',
+          description: "Vous descendez de l'avion à l'aéroport Palisadoes de Kingston, 1957",
+        },
+        {
+          slug: 'sailing',
+          title: "La Promesse de l'Océan",
+          description:
+            "Dirigez une expédition de restauration corallienne à bord d'un voilier de recherche dans les Caraïbes!",
+        },
+      ],
+      en: [
+        {
+          slug: 'montpellier',
+          title: 'Medieval Montpellier',
+          description: 'Explore medieval life in 10th century Montpellier!',
+        },
+        {
+          slug: 'cretace',
+          title: 'Cretaceous Era',
+          description: 'Discover the fascinating world of scallops!',
+        },
+        {
+          slug: 'truman',
+          title: 'The Truman Show',
+          description:
+            'Experience the real world for the first time after a lifetime in a TV show!',
+        },
+        {
+          slug: 'kingston',
+          title: 'In Kingston Town',
+          description: "You step off the plane at Kingston's Palisadoes Airport, 1957",
+        },
+        {
+          slug: 'sailing',
+          title: "Ocean's Promise",
+          description:
+            'Lead a coral restoration expedition aboard a research sailing vessel in the Caribbean!',
+        },
+      ],
+      zh: [
+        {
+          slug: 'montpellier',
+          title: '中世纪蒙彼利埃',
+          description: '探索10世纪蒙彼利埃的中世纪生活！',
+        },
+        {
+          slug: 'cretace',
+          title: '白垩纪时代',
+          description: '探索扇贝的迷人世界！',
+        },
+        {
+          slug: 'truman',
+          title: '楚门的世界',
+          description: '在电视节目中生活一辈子后，第一次体验真实世界！',
+        },
+        {
+          slug: 'kingston',
+          title: '在金斯敦镇',
+          description: '您从金斯敦帕利萨多斯机场走下飞机，1957年',
+        },
+        {
+          slug: 'sailing',
+          title: '海洋之约',
+          description: '在加勒比海研究帆船上领导珊瑚修复探险！',
+        },
+      ],
+    }
+
+    return fallbackTranslations[lang] || fallbackTranslations.fr
+  }
+
   const handleStorySelect = (storySlug: string): void => {
-    console.log(`Starting new adventure: ${storySlug}`)
+    console.log(`Starting new adventure: ${storySlug} in ${language}`)
 
     try {
       // Clear any existing session for this story first
@@ -92,7 +227,7 @@ const StoriesGrid: React.FC = () => {
       const newSessionId = SessionManager.createNewSessionForStory(storySlug)
       console.log(`Created new session for story ${storySlug}:`, newSessionId)
 
-      // Navigate to the story page
+      // Navigate to the story page - language will be passed via URL context
       router.push(`/${storySlug}`)
     } catch (error) {
       console.error('Error creating new session:', error)
@@ -101,9 +236,66 @@ const StoriesGrid: React.FC = () => {
     }
   }
 
+  if (loading) {
+    return (
+      <VStack spacing={8} align="center" py={20}>
+        <Box>
+          <Image
+            src="/loader.svg"
+            alt="Loading..."
+            width={200}
+            height={200}
+            style={{
+              animation: 'spin 2s linear infinite',
+            }}
+          />
+          <style jsx>{`
+            @keyframes spin {
+              from {
+                transform: rotate(0deg);
+              }
+              to {
+                transform: rotate(360deg);
+              }
+            }
+          `}</style>
+        </Box>
+      </VStack>
+    )
+  }
+
+  if (error) {
+    return (
+      <VStack spacing={8} align="stretch">
+        {/* <Alert status="error">
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">Error loading stories</Text>
+            <Text fontSize="sm">{error}</Text>
+          </Box>
+        </Alert> */}
+
+        {stories.length > 0 && (
+          <>
+            <VStack spacing={4} align="stretch">
+              {stories.map(story => (
+                <StoryBox
+                  key={story.slug}
+                  story={story}
+                  onClick={handleStorySelect}
+                  buttonText={getButtonText(language)}
+                />
+              ))}
+            </VStack>
+          </>
+        )}
+      </VStack>
+    )
+  }
+
   return (
     <VStack spacing={8} align="stretch">
-      <Grid templateColumns={{ base: '1fr', md: 'repeat(2, 1fr)', lg: 'repeat(3, 1fr)' }} gap={6}>
+      <VStack spacing={4} align="stretch">
         {stories.map(story => (
           <StoryBox
             key={story.slug}
@@ -112,7 +304,18 @@ const StoriesGrid: React.FC = () => {
             buttonText={getButtonText(language)}
           />
         ))}
-      </Grid>
+      </VStack>
+
+      {stories.length === 0 && (
+        <VStack spacing={4} align="center" py={10}>
+          <Text color="gray.500" textAlign="center">
+            No stories available in {language}.
+          </Text>
+          <Text color="gray.400" fontSize="sm" textAlign="center">
+            Try switching to English or French, or check back later.
+          </Text>
+        </VStack>
+      )}
     </VStack>
   )
 }

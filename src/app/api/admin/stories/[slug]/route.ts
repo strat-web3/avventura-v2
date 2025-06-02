@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { StoryService } from '@/lib/database'
 
+// Mark as dynamic to prevent static generation issues
+export const dynamic = 'force-dynamic'
+
 interface StoryRequest {
   sessionId: string
   choice?: number
@@ -22,19 +25,18 @@ interface Message {
   content: string
 }
 
-// Map frontend language names to full language names for Claude
-// ✅ FIXED: Now matches what frontend sends
+// Map frontend language codes to full language names for Claude
 const LANGUAGE_MAPPING: Record<string, string> = {
-  English: 'English',
-  Chinese: '中文 (Chinese)',
-  Hindi: 'हिन्दी (Hindi)',
-  Spanish: 'Español (Spanish)',
-  French: 'Français (French)',
-  Arabic: 'العربية (Arabic)',
-  Bengali: 'বাংলা (Bengali)',
-  Russian: 'Русский (Russian)',
-  Portuguese: 'Português (Portuguese)',
-  Urdu: 'اردو (Urdu)',
+  en: 'English',
+  zh: 'Chinese',
+  hi: 'Hindi',
+  es: 'Spanish',
+  fr: 'French',
+  ar: 'Arabic',
+  bn: 'Bengali',
+  ru: 'Russian',
+  pt: 'Portuguese',
+  ur: 'Urdu',
 }
 
 function parseStoryResponse(response: string): { currentStep: StoryStep; nextSteps: StoryStep[] } {
@@ -107,8 +109,7 @@ async function callClaude(messages: Message[]): Promise<string> {
 }
 
 function createInitialSystemMessage(storyContent: string, language: string): string {
-  // ✅ FIXED: Now correctly looks up the full language instruction
-  const languageName = LANGUAGE_MAPPING[language] || 'Français (French)'
+  const languageName = LANGUAGE_MAPPING[language] || 'French'
 
   return `# INSTRUCTIONS FOR THE MULTILINGUAL ADVENTURE
 
@@ -166,7 +167,7 @@ export async function POST(request: NextRequest) {
       sessionId,
       choice,
       storyName,
-      language = 'French',
+      language = 'fr',
       forceRestart = false,
       conversationHistory = [],
     } = body
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
       console.log(`🆕 Starting new conversation for: ${storyName} in ${language}`)
 
       try {
-        // Fetch story from database (no language parameter needed)
+        // Fetch story from database (single entry, no language parameter needed)
         const story = await StoryService.getStory(storyName)
 
         if (!story) {
@@ -337,7 +338,7 @@ export async function POST(request: NextRequest) {
           success: true,
         }
 
-        console.log('✅ Multilingual API response ready (with fallback)')
+        console.log('✅ Story API response ready (with fallback)')
         return NextResponse.json(result)
       }
     } else {
@@ -375,7 +376,7 @@ export async function POST(request: NextRequest) {
       success: true,
     }
 
-    console.log('✅ API response ready')
+    console.log('✅ Story API response ready')
     return NextResponse.json(result)
   } catch (error) {
     console.error('❌ Error in story processing:', error)
@@ -397,12 +398,13 @@ export async function GET() {
     const stats = await StoryService.getStoryStats()
 
     return NextResponse.json({
-      status: 'healthy - multilingual ready',
+      status: 'healthy - single entry database',
       timestamp: new Date().toISOString(),
       database: isDbHealthy ? 'connected' : 'disconnected',
       stories: stats,
       languages: Object.keys(LANGUAGE_MAPPING).length,
       supportedLanguages: Object.keys(LANGUAGE_MAPPING),
+      schema: 'single-entry-with-json-homepage-display',
     })
   } catch (error) {
     return NextResponse.json(
