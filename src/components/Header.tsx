@@ -111,17 +111,8 @@ export default function Header() {
               size="sm"
             />
             <MenuList>
-              <Link href="/new" color="white">
-                <MenuItem fontSize="md">{t.navigation.newPage}</MenuItem>
-              </Link>
-              <Link href="/wallet" color="white">
-                <MenuItem fontSize="md">{t.navigation.walletGenerator}</MenuItem>
-              </Link>
-              <Link href="/referral" color="white">
-                <MenuItem fontSize="md">{t.navigation.referral}</MenuItem>
-              </Link>
-              <Link href="/subscribe" color="white">
-                <MenuItem fontSize="md">Subscribe</MenuItem>
+              <Link href="/create" color="white">
+                <MenuItem fontSize="md">Create your own!!</MenuItem>
               </Link>
             </MenuList>
           </Menu>
