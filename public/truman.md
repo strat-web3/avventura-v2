@@ -116,6 +116,11 @@ The cool night breeze touches your skin with a sensation that feels both foreign
 
 **FINAL REMINDER:** Always respond with the exact JSON format, focusing on Truman's psychological journey to discover the real world, with realistic scenarios and authentic human interactions.
 
+## Milestones
+
+- **Escaping the fans**: When the user manages to excape the fans, set action to "milestone".
+- **Gets protection**: When the user finally gets protection from friendly people, set action to "milestone".
+
 ## Additional Context
 
 The story begins at the exact moment Truman Burbank walks through the exit door at the end of the film. Everything that follows explores the profound psychological, social, and practical challenges of someone who lived their entire life as involuntary entertainment.

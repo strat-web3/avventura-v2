@@ -171,6 +171,11 @@ The Caribbean morning air is crisp with anticipation as you step aboard the rese
 
 **FINAL REMINDER:** Always respond with the exact JSON format, focusing on scientifically accurate coral restoration techniques, authentic maritime operations, and the critical importance of marine conservation in our changing climate.
 
+## Milestones
+
+- **Fragment collection**: When the team manage to collect fragment (back onboard), set action to "milestone".
+- **Success monitoring and adaptive management**: When the team successfully monitored the adaptation, set action to "milestone".
+
 ## Additional Context
 
 The adventure takes place in 2025, during a critical period for coral reef conservation when advanced restoration techniques offer hope but time is running short. This is both a scientific mission and a race against climate change - you're not just studying coral reefs, you're actively working to save them.
