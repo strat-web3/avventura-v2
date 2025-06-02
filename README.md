@@ -1,6 +1,8 @@
 # Avventura v2
 
-AI-first Text-based RPG game.
+Text-based RPG game.
+
+You can read the API docs [here](https://github.com/strat-web3/avventura-v2/blob/main/API_DOCS.md).
 
 ## Install
 
@@ -21,13 +23,6 @@ Add your own keys in the `.env` file (you can get it in your [Reown dashboard](h
 ```bash
 pnpm dev
 ```
-
-### Documentation References
-
-- [Ethers.js `v6`](https://docs.ethers.org/v6/) - Ethereum library
-- [Reown AppKit](https://reown.com/appkit) - Web3 authentication
-- [Chakra UI](https://chakra-ui.com/docs/components) - UI components
-- [Next.js](https://nextjs.org/docs) - React framework
 
 ## Support
 
