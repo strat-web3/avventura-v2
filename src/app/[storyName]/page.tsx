@@ -3,8 +3,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Container, Text, Button, useToast, Box, VStack, Flex } from '@chakra-ui/react'
 import { useAppKitAccount, useAppKitNetwork, useAppKitProvider } from '@reown/appkit/react'
-import { BrowserProvider, parseEther, formatEther } from 'ethers'
-import Link from 'next/link'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useLanguage } from '@/context/LanguageContext'
 import { useParams } from 'next/navigation'
@@ -22,20 +20,21 @@ interface StoryRequest {
   storyName: string
   language?: string
   forceRestart?: boolean
-  conversationHistory?: Message[] // Add conversation history
+  conversationHistory?: Message[]
 }
 
 interface StoryStep {
   step?: number
   desc: string
   options: string[]
+  action?: string // Added action field
 }
 
 interface StoryResponse {
   sessionId?: string
   currentStep: StoryStep
   nextSteps: StoryStep[]
-  conversationHistory?: Message[] // Add conversation history to response
+  conversationHistory?: Message[]
   success: boolean
   error?: string
   shouldRestart?: boolean
@@ -93,7 +92,6 @@ const generateSessionId = (): string => {
   return `session_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Helper function to convert language code to language name for API
 const getLanguageForAPI = (languageCode: string): string => {
   const languageMap: Record<string, string> = {
     en: 'English',
@@ -108,7 +106,7 @@ const getLanguageForAPI = (languageCode: string): string => {
     ur: 'اردو',
   }
 
-  return languageMap[languageCode] || 'français' // Fallback to français
+  return languageMap[languageCode] || 'français'
 }
 
 export default function StoryPage() {
@@ -118,14 +116,12 @@ export default function StoryPage() {
   const [nextSteps, setNextSteps] = useState<StoryStep[]>([])
   const [sessionId, setSessionId] = useState<string>('')
   const [isInitialized, setIsInitialized] = useState(false)
-  const [conversationHistory, setConversationHistory] = useState<Message[]>([]) // Add conversation history state
+  const [conversationHistory, setConversationHistory] = useState<Message[]>([])
 
   // Simple ref to prevent duplicate initialization in React Strict Mode
   const initializeOnce = useRef(false)
   const currentStoryName = useRef<string>('')
 
-  const { address, isConnected } = useAppKitAccount()
-  const { walletProvider } = useAppKitProvider('eip155')
   const { language } = useLanguage() // Get current language
   const toast = useToast()
   const t = useTranslation()
@@ -144,8 +140,79 @@ export default function StoryPage() {
     setShowOptions(value)
   }
 
+  // Create heart element for milestone celebration
+  const createHeart = () => {
+    const heart = document.createElement('div')
+    heart.innerText = '❤️'
+    heart.style.position = 'fixed'
+    heart.style.fontSize = `${Math.random() * 20 + 20}px`
+    heart.style.left = `${Math.random() * 100}vw`
+    heart.style.top = '-30px'
+    heart.style.zIndex = '1000'
+    heart.style.userSelect = 'none'
+    heart.style.pointerEvents = 'none'
+
+    // Set random animation properties
+    const duration = Math.random() * 2 + 2 // 2-4 seconds
+
+    // Apply animation
+    heart.animate(
+      [
+        {
+          transform: `translate(0, 0) rotate(0deg)`,
+          opacity: 1,
+        },
+        {
+          transform: `translate(${Math.random() * 10 - 5}px, ${window.innerHeight * 0.5}px) rotate(${Math.random() * 60 - 30}deg)`,
+          opacity: 1,
+        },
+        {
+          transform: `translate(${Math.random() * 20 - 10}px, ${window.innerHeight + 50}px) rotate(${Math.random() * 100 - 50}deg)`,
+          opacity: 0,
+        },
+      ],
+      {
+        duration: duration * 1000,
+        easing: 'cubic-bezier(0.1, 0.8, 0.8, 1)',
+        fill: 'forwards',
+      }
+    )
+
+    document.body.appendChild(heart)
+
+    // Remove the heart element when animation completes
+    setTimeout(() => {
+      if (heart.parentNode) {
+        heart.parentNode.removeChild(heart)
+      }
+    }, duration * 1000)
+  }
+
+  // Trigger milestone celebration
+  const triggerMilestoneCelebration = () => {
+    console.log('🎉 Starting milestone celebration!')
+
+    // Create 150 trophy emojis over 3 seconds
+    for (let i = 0; i < 150; i++) {
+      setTimeout(() => createHeart(), i * 20) // One every 20ms for 3 seconds
+    }
+  }
+
   const setCurrentStepWithLogging = (step: StoryStep | null, reason: string) => {
     console.log(`Setting currentStep, reason: ${reason}`, step)
+
+    // Log action if present
+    if (step?.action) {
+      console.log(`🎯 Action: ${step.action}`)
+
+      // Special handling for milestones
+      if (step.action === 'milestone') {
+        console.log('🏆 MILESTONE REACHED!')
+        // Trigger the celebration effect
+        triggerMilestoneCelebration()
+      }
+    }
+
     setCurrentStep(step)
   }
 
@@ -361,7 +428,7 @@ export default function StoryPage() {
         sessionId: sessionId,
         choice: choice,
         storyName: storyName,
-        language: apiLanguage, // Use detected language with fallback
+        language: apiLanguage,
         conversationHistory: conversationHistory, // Send conversation history to indicate this is NOT a new conversation
       })
 

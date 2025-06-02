@@ -34,6 +34,10 @@ The crystal-clear water laps gently at your feet, and you can see strange marine
 - Don't invent other human characters: there's only professor Juju and the user.
 - Make sure we encounter pectinids during the adventure.
 
+## Milestones
+
+**Pectinid Discovery**: When the user discovers or encounters a pectinid (scallop) for the first time during the adventure, set action to "milestone". This represents a key educational moment where the user learns about these important marine creatures from the Cretaceous period.
+
 ## Additional context
 
 ### The Lost World of Cretaceous Normandy
@@ -78,4 +82,4 @@ It shares its habitat with other mollusks like oysters, trigonias with triangula
 
 Our pectinid thus lives for a few years, filtering plankton, avoiding predators, and periodically releasing its gametes into the water to reproduce. One day, perhaps during a storm that stirs up the bottom sediments, or simply at the end of its natural life, its shell closes one last time.
 
-Quickly covered by the marine snow of calcareous micro-organisms that constantly falls in this sea, its shell begins a long journey through the ages. Sediments accumulate, compact, transform into chalk. Millions of years later, tectonic movements lift these ancient seafloors, erosion sculpts the cliffs, and finally, on a summer day on a Fécamp beach, some 80 million years later, you discover this fossilized shell – silent messenger from a vanished world where warm seas covered Normandy and the last dinosaurs still roamed the Earth.
+Quickly covered by the marine snow of calcareous micro-organisms that constantly falls in this sea, its shell begins a long journey through the ages. Sediments accumulate, compact, transform into chalk. Millions of years later, tectonic movements lift these ancient seafloors, erosion sculpts the cliffs, and finally, on a summer day on a Fécamp beach, some 80 million years later, you discover this fossilized shell – silent messenger from a vanished world where warm seas covered Normandy and the last dinosaurs still roamed the Earth.s

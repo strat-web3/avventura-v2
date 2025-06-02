@@ -15,6 +15,7 @@ interface StoryStep {
   step?: number
   desc: string
   options: string[]
+  action?: string
 }
 
 interface Message {
@@ -33,11 +34,16 @@ function parseStoryResponse(response: string): { currentStep: StoryStep; nextSte
         throw new Error(`Invalid step format: expected 3 options, got ${parsed.options.length}`)
       }
 
+      if (parsed.action) {
+        console.log(`🎯 Action: ${parsed.action}`)
+      }
+
       return {
         currentStep: {
           step: 1,
           desc: parsed.desc,
           options: parsed.options,
+          action: parsed.action,
         },
         nextSteps: [],
       }
@@ -120,7 +126,8 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model:
       "Option 1",
       "Option 2", 
       "Option 3"
-    ]
+    ],
+    "action": "milestone"
 }
 \`\`\`
 
@@ -130,7 +137,9 @@ At each step, provide ONLY a JSON object (nothing else) with this exact model:
 - Keep in memory the choices of users: make it so the story don't repeat itself
 - There must be surprises. Be as creative as you can, but keep the historical and musical accuracy
 - The description MUST correspond to the previously selected option to ensure continuity
-- CRITICAL: Return ONLY a JSON object with desc and options. Do not wrap in markdown code blocks or any other formatting.
+- When the user reaches a significant story milestone, discovery, or important plot point (eventually specified in the "## Milestones" section), set action to "milestone"
+- For regular story progression, you can omit the action field or set it to "continue"
+- CRITICAL: Return ONLY a JSON object with desc, options, and optionally action. Do not wrap in markdown code blocks or any other formatting.
 
 ## Story Content:
 
