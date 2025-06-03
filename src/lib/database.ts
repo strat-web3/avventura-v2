@@ -113,6 +113,7 @@ export class StoryService {
   /**
    * Get stories with homepage display data for a specific language
    * Returns stories with title and description in the requested language
+   * Falls back to English if the requested language is not available
    */
   static async getStoriesForHomepage(language: string = 'fr'): Promise<
     Array<{
@@ -130,7 +131,7 @@ export class StoryService {
         // Try to get title and description in requested language
         const displayData = story.homepage_display[language]
 
-        if (displayData) {
+        if (displayData && displayData.title && displayData.description) {
           return {
             slug: story.slug,
             title: displayData.title,
@@ -138,9 +139,9 @@ export class StoryService {
           }
         }
 
-        // Fallback to English
+        // Fallback to English (always use English if available)
         const englishData = story.homepage_display['en']
-        if (englishData) {
+        if (englishData && englishData.title && englishData.description) {
           console.log(
             `⚠️ Using English fallback for story '${story.slug}' (requested: ${language})`
           )
@@ -151,18 +152,7 @@ export class StoryService {
           }
         }
 
-        // Ultimate fallback to French
-        const frenchData = story.homepage_display['fr']
-        if (frenchData) {
-          console.log(`⚠️ Using French fallback for story '${story.slug}' (requested: ${language})`)
-          return {
-            slug: story.slug,
-            title: frenchData.title,
-            description: frenchData.description,
-          }
-        }
-
-        // Last resort: use the default title and a generic description
+        // Ultimate fallback: use the default title and a generic description
         console.log(`⚠️ Using default fallback for story '${story.slug}' (requested: ${language})`)
         return {
           slug: story.slug,
