@@ -1,4 +1,4 @@
-// src/app/labs/page.tsx
+// src/app/create/page.tsx - Original version with background English fallback
 'use client'
 
 import React, { useState } from 'react'
@@ -132,6 +132,8 @@ const StoryCreator: React.FC = () => {
     setLoading(true)
 
     try {
+      console.log('📤 Submitting story with English fallback support:', form)
+
       const response = await fetch('/api/admin/stories', {
         method: 'POST',
         headers: {
@@ -147,12 +149,14 @@ const StoryCreator: React.FC = () => {
       }
 
       toast({
-        title: 'Success!',
-        description: `Story "${form.title}" has been created successfully.`,
+        title: 'Success! 🎉',
+        description: `Story "${form.title}" has been created and is available in ${data.availableLanguages?.length || 10} languages!`,
         status: 'success',
         duration: 5000,
         isClosable: true,
       })
+
+      console.log('✅ Story created with automatic language fallbacks:', data.story)
 
       // Reset form
       setForm({
@@ -238,8 +242,8 @@ const StoryCreator: React.FC = () => {
             🧪 Story Labs
           </Heading>
           <Text fontSize="lg" color="gray.400" textAlign="center" maxW="600px">
-            Create your own interactive adventure story! Believe it or not, it will show up on the
-            homepage.
+            Create your own interactive adventure story! Your story will be automatically available
+            in all supported languages.
           </Text>
         </VStack>
 
@@ -251,8 +255,8 @@ const StoryCreator: React.FC = () => {
             <AlertDescription>
               Your story should include educational content, clear milestones, and be appropriate
               for all ages. Stories will be playable in all supported languages through AI
-              translation. English translation is required, other languages are optional and will
-              fall back to English if not provided.
+              translation. English translation is required - other languages are optional and will
+              automatically use English content if not provided.
             </AlertDescription>
           </Box>
         </Alert>
@@ -477,8 +481,8 @@ Provide detailed background information for authentic experiences...`}
               </Heading>
               <Text fontSize="sm" color="gray.500" mb={4}>
                 Provide title and description for how your story appears on the homepage in
-                different languages. English is required, other languages are optional and will fall
-                back to English if not provided.
+                different languages. English is required - other languages are optional and will
+                automatically use English content if not provided.
               </Text>
 
               <VStack spacing={6} align="stretch">
@@ -495,7 +499,7 @@ Provide detailed background information for authentic experiences...`}
                           </Badge>
                           {isRequired && (
                             <Text fontSize="xs" color="red.500">
-                              (Required)
+                              (Required - Used as fallback for other languages)
                             </Text>
                           )}
                         </HStack>
@@ -557,7 +561,8 @@ Provide detailed background information for authentic experiences...`}
                 {availableLanguages.length > 0 && (
                   <Box>
                     <Text fontSize="sm" mb={2}>
-                      Add translations for additional languages (optional):
+                      Add custom translations for additional languages (optional - will use English
+                      if not provided):
                     </Text>
                     <HStack wrap="wrap" spacing={2}>
                       {availableLanguages.map(language => (

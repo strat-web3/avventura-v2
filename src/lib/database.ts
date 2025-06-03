@@ -1,4 +1,3 @@
-// src/lib/database.ts - Single entry per story with JSON homepage_display
 import { Pool } from 'pg'
 
 // Create a singleton connection pool
@@ -64,6 +63,54 @@ export const SUPPORTED_LANGUAGES = [
 ] as const
 
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number]
+
+/**
+ * Fills in missing language translations with English content as fallback
+ * @param homepageDisplay - The current homepage display object
+ * @returns Enhanced homepage display with English fallbacks for missing languages
+ */
+function fillLanguageFallbacks(homepageDisplay: HomepageDisplay): HomepageDisplay {
+  // Get English content as the source for fallbacks
+  const englishContent = homepageDisplay['en']
+
+  if (!englishContent || !englishContent.title || !englishContent.description) {
+    console.warn('⚠️ No English content found for fallback. Skipping automatic language fill.')
+    return homepageDisplay
+  }
+
+  console.log('🌍 English content found, filling missing language translations...')
+
+  // Create a copy of the original homepage_display
+  const enhancedDisplay: HomepageDisplay = { ...homepageDisplay }
+
+  // Fill missing languages with English content
+  SUPPORTED_LANGUAGES.forEach(lang => {
+    if (
+      !enhancedDisplay[lang] ||
+      !enhancedDisplay[lang].title ||
+      !enhancedDisplay[lang].description
+    ) {
+      enhancedDisplay[lang] = {
+        title: englishContent.title,
+        description: englishContent.description,
+      }
+      console.log(`  ✅ Added English fallback for language: ${lang}`)
+    } else {
+      console.log(`  ℹ️ Language ${lang} already has content, keeping existing`)
+    }
+  })
+
+  const addedLanguages = SUPPORTED_LANGUAGES.filter(
+    lang =>
+      !homepageDisplay[lang] || !homepageDisplay[lang].title || !homepageDisplay[lang].description
+  ).length
+
+  console.log(
+    `🎯 Language fallback complete: ${addedLanguages} languages filled with English content`
+  )
+
+  return enhancedDisplay
+}
 
 // Database operations for stories
 export class StoryService {
@@ -168,6 +215,7 @@ export class StoryService {
 
   /**
    * Create or update a story
+   * Automatically fills missing language translations with English content
    */
   static async upsertStory(
     storyData: Omit<Story, 'id' | 'created_at' | 'updated_at'>
@@ -175,6 +223,11 @@ export class StoryService {
     const pool = getPool()
 
     try {
+      console.log(`📝 Upserting story: ${storyData.slug}`)
+
+      // Enhance homepage_display with English fallbacks for missing languages
+      const enhancedHomepageDisplay = fillLanguageFallbacks(storyData.homepage_display)
+
       const query = `
         INSERT INTO stories (slug, title, content, homepage_display, is_active)
         VALUES ($1, $2, $3, $4, $5)
@@ -192,11 +245,13 @@ export class StoryService {
         storyData.slug,
         storyData.title,
         storyData.content,
-        JSON.stringify(storyData.homepage_display),
+        JSON.stringify(enhancedHomepageDisplay), // Use enhanced version with fallbacks
         storyData.is_active,
       ])
 
-      console.log(`✅ Upserted story: ${storyData.slug}`)
+      console.log(
+        `✅ Upserted story: ${storyData.slug} with ${Object.keys(enhancedHomepageDisplay).length} languages`
+      )
       return result.rows[0] as Story
     } catch (error) {
       console.error('Error upserting story:', error)
@@ -206,6 +261,7 @@ export class StoryService {
 
   /**
    * Update only the homepage display data for a story
+   * Automatically fills missing language translations with English content
    */
   static async updateHomepageDisplay(
     slug: string,
@@ -214,17 +270,24 @@ export class StoryService {
     const pool = getPool()
 
     try {
+      console.log(`📝 Updating homepage display for: ${slug}`)
+
+      // Enhance homepage_display with English fallbacks for missing languages
+      const enhancedHomepageDisplay = fillLanguageFallbacks(homepageDisplay)
+
       const query = `
         UPDATE stories 
         SET homepage_display = $1, updated_at = NOW() 
         WHERE slug = $2 AND is_active = true
       `
 
-      const result = await pool.query(query, [JSON.stringify(homepageDisplay), slug])
+      const result = await pool.query(query, [JSON.stringify(enhancedHomepageDisplay), slug])
 
       const success = result.rowCount! > 0
       if (success) {
-        console.log(`✅ Updated homepage display for story: ${slug}`)
+        console.log(
+          `✅ Updated homepage display for story: ${slug} with ${Object.keys(enhancedHomepageDisplay).length} languages`
+        )
       } else {
         console.log(`❌ Story not found: ${slug}`)
       }
