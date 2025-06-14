@@ -1,0 +1,5 @@
+# Proxy Claude API requests to external service
+/api/proxy/claude/* https://rukh.w3hc.org/:splat 200
+
+# SPA fallback for client-side routing
+/*    /index.html   200

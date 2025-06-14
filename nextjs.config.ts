@@ -47,6 +47,16 @@ const nextConfig: NextConfig = {
   experimental: {
     optimizePackageImports: ['@reown/appkit', '@walletconnect/universal-provider'],
   },
+
+  // Add proxy rewrites for development and production
+  async rewrites() {
+    return [
+      {
+        source: '/api/proxy/claude/:path*',
+        destination: 'https://rukh.w3hc.org/:path*',
+      },
+    ]
+  },
 }
 
 export default nextConfig

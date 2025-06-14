@@ -160,6 +160,56 @@ After this initial setup, the user will communicate using only simple choice mes
 Now please start this adventure story from the beginning in ${languageName}.`
 }
 
+// GET /api/admin/stories/[slug] - Get a specific story by slug
+export async function GET(request: NextRequest, { params }: { params: { slug: string } }) {
+  try {
+    const { slug } = params
+    console.log(`🔍 GET request for story slug: ${slug}`)
+
+    if (!slug) {
+      console.log('❌ No slug provided')
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Story slug is required',
+        },
+        { status: 400 }
+      )
+    }
+
+    // Fetch story from database
+    console.log(`📖 Fetching story from database: ${slug}`)
+    const story = await StoryService.getStory(slug)
+
+    if (!story) {
+      console.log(`❌ Story not found in database: ${slug}`)
+      return NextResponse.json(
+        {
+          success: false,
+          error: `Story '${slug}' not found`,
+        },
+        { status: 404 }
+      )
+    }
+
+    console.log(`✅ Story found: ${story.title} (ID: ${story.id})`)
+    return NextResponse.json({
+      success: true,
+      story,
+      message: `Story '${story.title}' retrieved successfully`,
+    })
+  } catch (error) {
+    console.error('❌ Error in GET /api/admin/stories/[slug]:', error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch story',
+      },
+      { status: 500 }
+    )
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: StoryRequest = await request.json()
@@ -385,34 +435,6 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',
-      },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET() {
-  try {
-    // Health check endpoint that also tests database connection
-    const isDbHealthy = await StoryService.healthCheck()
-    const stats = await StoryService.getStoryStats()
-
-    return NextResponse.json({
-      status: 'healthy - single entry database',
-      timestamp: new Date().toISOString(),
-      database: isDbHealthy ? 'connected' : 'disconnected',
-      stories: stats,
-      languages: Object.keys(LANGUAGE_MAPPING).length,
-      supportedLanguages: Object.keys(LANGUAGE_MAPPING),
-      schema: 'single-entry-with-json-homepage-display',
-    })
-  } catch (error) {
-    return NextResponse.json(
-      {
-        status: 'unhealthy',
-        timestamp: new Date().toISOString(),
-        database: 'error',
-        error: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }
     )
