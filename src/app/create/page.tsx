@@ -110,11 +110,122 @@ const CreateStoryPage: React.FC = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
 
+  // Fetch existing stories function
+  const fetchExistingStories = React.useCallback(async () => {
+    console.log('📡 Starting fetchExistingStories...')
+    setIsLoadingStories(true)
+    try {
+      console.log('🔗 Making request to /api/admin/stories')
+      const response = await fetch('/api/admin/stories')
+      console.log('📡 Response status:', response.status, response.statusText)
+
+      const data = await response.json()
+      console.log('📦 Response data:', data)
+
+      if (data.success) {
+        console.log('✅ Stories fetched successfully:', data.stories.length, 'stories')
+        console.log(
+          '📚 Story details:',
+          data.stories.map((s: ExistingStory) => ({ slug: s.slug, title: s.title, id: s.id }))
+        )
+        setExistingStories(data.stories)
+      } else {
+        console.error('❌ API returned error:', data.error)
+        toast({
+          title: 'Failed to load stories',
+          description: data.error || 'Could not fetch existing stories',
+          status: 'error',
+          duration: 3000,
+        })
+      }
+    } catch (error) {
+      console.error('💥 Error fetching stories:', error)
+      toast({
+        title: 'Network Error',
+        description: 'Failed to connect to the server',
+        status: 'error',
+        duration: 3000,
+      })
+    } finally {
+      setIsLoadingStories(false)
+      console.log('🏁 fetchExistingStories completed')
+    }
+  }, [toast])
+
   // Load existing stories on component mount
   useEffect(() => {
     console.log('🔄 Component mounted, fetching existing stories...')
     fetchExistingStories()
-  }, [])
+  }, [fetchExistingStories])
+
+  // Load a specific story for editing
+  const loadStoryForEditing = React.useCallback(
+    async (slug: string) => {
+      console.log('📖 Starting loadStoryForEditing for slug:', slug)
+      if (!slug) {
+        console.log('❌ No slug provided to loadStoryForEditing')
+        return
+      }
+
+      setIsLoadingStory(true)
+      try {
+        console.log('🔗 Making request to /api/admin/stories/', slug)
+        const response = await fetch(`/api/admin/stories/${slug}`)
+        console.log('📡 Response status:', response.status, response.statusText)
+
+        const data = await response.json()
+        console.log('📦 Story load response:', data)
+
+        if (data.success && data.story) {
+          const story = data.story
+          console.log('✅ Story loaded successfully:', {
+            slug: story.slug,
+            title: story.title,
+            contentLength: story.content?.length,
+            homepageDisplayKeys: Object.keys(story.homepage_display || {}),
+          })
+
+          setFormData({
+            slug: story.slug,
+            title: story.title,
+            content: story.content,
+            homepage_display: story.homepage_display || {
+              en: { title: '', description: '' },
+              fr: { title: '', description: '' },
+            },
+          })
+          setEditMode(true)
+
+          toast({
+            title: 'Story Loaded',
+            description: `"${story.title}" is now ready for editing`,
+            status: 'success',
+            duration: 3000,
+          })
+        } else {
+          console.error('❌ Story load failed:', data.error || 'Story not found')
+          toast({
+            title: 'Story Not Found',
+            description: data.error || `Could not find story: ${slug}`,
+            status: 'error',
+            duration: 3000,
+          })
+        }
+      } catch (error) {
+        console.error('💥 Error loading story:', error)
+        toast({
+          title: 'Load Error',
+          description: 'Failed to load the selected story',
+          status: 'error',
+          duration: 3000,
+        })
+      } finally {
+        setIsLoadingStory(false)
+        console.log('🏁 loadStoryForEditing completed for slug:', slug)
+      }
+    },
+    [toast]
+  )
 
   // Handle URL edit parameter after stories are loaded
   useEffect(() => {
@@ -153,115 +264,7 @@ const CreateStoryPage: React.FC = () => {
     } else if (editSlug && existingStories.length === 0) {
       console.log('⏳ Edit slug found but stories not loaded yet:', editSlug)
     }
-  }, [existingStories, searchParams])
-
-  // Fetch all existing stories
-  const fetchExistingStories = async () => {
-    console.log('📡 Starting fetchExistingStories...')
-    setIsLoadingStories(true)
-    try {
-      console.log('🔗 Making request to /api/admin/stories')
-      const response = await fetch('/api/admin/stories')
-      console.log('📡 Response status:', response.status, response.statusText)
-
-      const data = await response.json()
-      console.log('📦 Response data:', data)
-
-      if (data.success) {
-        console.log('✅ Stories fetched successfully:', data.stories.length, 'stories')
-        console.log(
-          '📚 Story details:',
-          data.stories.map(s => ({ slug: s.slug, title: s.title, id: s.id }))
-        )
-        setExistingStories(data.stories)
-      } else {
-        console.error('❌ API returned error:', data.error)
-        toast({
-          title: 'Failed to load stories',
-          description: data.error || 'Could not fetch existing stories',
-          status: 'error',
-          duration: 3000,
-        })
-      }
-    } catch (error) {
-      console.error('💥 Error fetching stories:', error)
-      toast({
-        title: 'Network Error',
-        description: 'Failed to connect to the server',
-        status: 'error',
-        duration: 3000,
-      })
-    } finally {
-      setIsLoadingStories(false)
-      console.log('🏁 fetchExistingStories completed')
-    }
-  }
-
-  // Load a specific story for editing
-  const loadStoryForEditing = async (slug: string) => {
-    console.log('📖 Starting loadStoryForEditing for slug:', slug)
-    if (!slug) {
-      console.log('❌ No slug provided to loadStoryForEditing')
-      return
-    }
-
-    setIsLoadingStory(true)
-    try {
-      console.log('🔗 Making request to /api/admin/stories/', slug)
-      const response = await fetch(`/api/admin/stories/${slug}`)
-      console.log('📡 Response status:', response.status, response.statusText)
-
-      const data = await response.json()
-      console.log('📦 Story load response:', data)
-
-      if (data.success && data.story) {
-        const story = data.story
-        console.log('✅ Story loaded successfully:', {
-          slug: story.slug,
-          title: story.title,
-          contentLength: story.content?.length,
-          homepageDisplayKeys: Object.keys(story.homepage_display || {}),
-        })
-
-        setFormData({
-          slug: story.slug,
-          title: story.title,
-          content: story.content,
-          homepage_display: story.homepage_display || {
-            en: { title: '', description: '' },
-            fr: { title: '', description: '' },
-          },
-        })
-        setEditMode(true)
-
-        toast({
-          title: 'Story Loaded',
-          description: `"${story.title}" is now ready for editing`,
-          status: 'success',
-          duration: 3000,
-        })
-      } else {
-        console.error('❌ Story load failed:', data.error || 'Story not found')
-        toast({
-          title: 'Story Not Found',
-          description: data.error || `Could not find story: ${slug}`,
-          status: 'error',
-          duration: 3000,
-        })
-      }
-    } catch (error) {
-      console.error('💥 Error loading story:', error)
-      toast({
-        title: 'Load Error',
-        description: 'Failed to load the selected story',
-        status: 'error',
-        duration: 3000,
-      })
-    } finally {
-      setIsLoadingStory(false)
-      console.log('🏁 loadStoryForEditing completed for slug:', slug)
-    }
-  }
+  }, [existingStories, searchParams, loadStoryForEditing, toast])
 
   // Handle story selection change
   const handleStorySelection = (slug: string) => {
@@ -390,72 +393,7 @@ const CreateStoryPage: React.FC = () => {
     setClaudeResponse(null)
 
     try {
-      // Create the story generation prompt
-      const storyGenerationPrompt = `You are a creative story writer and adventure game designer. The user wants you to create an interactive text-based adventure story based on their prompt.
-
-Your task is to generate a complete story specification that follows this exact JSON format:
-
-\`\`\`json
-{
-  "slug": "story-url-slug",
-  "title": "Story Title",
-  "content": "# Story Title\\n\\n## Setting\\n\\n[Detailed setting description]\\n\\n## Starting Scene\\n\\n[Opening scene description]\\n\\n## Story Context\\n\\n**Main Character:** [Character description]\\n\\n**Educational Objectives:**\\n- [Learning objective 1]\\n- [Learning objective 2]\\n- [Learning objective 3]\\n\\n**Tone and Style:**\\n- [Style guideline 1]\\n- [Style guideline 2]\\n\\n## Milestones\\n\\n- **Achievement**: When [milestone condition], set action to \\"milestone\\".\\n\\n## Additional Context\\n\\n[Additional story context, historical information, character details, etc.]",
-  "homepage_display": {
-    "en": { 
-      "title": "English Story Title", 
-      "description": "Engaging English description of the story" 
-    },
-    "fr": { 
-      "title": "Titre de l'Histoire en Français", 
-      "description": "Description engageante de l'histoire en français" 
-    },
-    "es": { 
-      "title": "Título de la Historia en Español", 
-      "description": "Descripción atractiva de la historia en español" 
-    },
-    "zh": { 
-      "title": "中文故事标题", 
-      "description": "中文故事的吸引人描述" 
-    },
-    "hi": { 
-      "title": "हिंदी कहानी शीर्षक", 
-      "description": "हिंदी में कहानी का आकर्षक विवरण" 
-    },
-    "ar": { 
-      "title": "عنوان القصة بالعربية", 
-      "description": "وصف جذاب للقصة بالعربية" 
-    },
-    "bn": { 
-      "title": "বাংলা গল্পের শিরোনাম", 
-      "description": "বাংলায় গল্পের আকর্ষণীয় বর্ণনা" 
-    },
-    "ru": { 
-      "title": "Название истории на русском", 
-      "description": "Увлекательное описание истории на русском" 
-    },
-    "pt": { 
-      "title": "Título da História em Português", 
-      "description": "Descrição envolvente da história em português" 
-    },
-    "ur": { 
-      "title": "اردو کہانی کا عنوان", 
-      "description": "اردو میں کہانی کی دلکش تفصیل" 
-    }
-  }
-}
-\`\`\`
-
-IMPORTANT GUIDELINES:
-1. The "content" field should be a detailed markdown document with proper sections
-2. Make the story educational and engaging
-3. Include specific milestones that trigger when certain story events happen
-4. Provide translations for all 10 supported languages in homepage_display
-5. The slug should be URL-friendly (lowercase, hyphens only)
-6. Make the story historically accurate if it involves real events/people
-7. Keep the tone appropriate for all ages
-8. Return ONLY the JSON object, no other text
-
-User's story prompt: "${claudePrompt}"
+      const storyGenerationPrompt = `User's story prompt: "${claudePrompt}"
 
 Generate a complete story specification now:`
 
