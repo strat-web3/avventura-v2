@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Container,
   VStack,
@@ -23,6 +23,8 @@ import {
   Collapse,
   useDisclosure,
   Badge,
+  Select,
+  Spinner,
 } from '@chakra-ui/react'
 import {
   FaPlus,
@@ -33,8 +35,10 @@ import {
   FaSave,
   FaEye,
   FaLanguage,
+  FaSearch,
+  FaUpload,
 } from 'react-icons/fa'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 
 // Language mapping for display
@@ -63,6 +67,16 @@ interface StoryFormData {
   homepage_display: Record<string, LanguageEntry>
 }
 
+interface ExistingStory {
+  id: number
+  slug: string
+  title: string
+  content: string
+  homepage_display: Record<string, LanguageEntry>
+  created_at: string
+  updated_at: string
+}
+
 const CreateStoryPage: React.FC = () => {
   const [formData, setFormData] = useState<StoryFormData>({
     slug: '',
@@ -74,6 +88,13 @@ const CreateStoryPage: React.FC = () => {
     },
   })
 
+  // Story loading state
+  const [existingStories, setExistingStories] = useState<ExistingStory[]>([])
+  const [selectedStorySlug, setSelectedStorySlug] = useState('')
+  const [isLoadingStories, setIsLoadingStories] = useState(false)
+  const [isLoadingStory, setIsLoadingStory] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [claudePrompt, setClaudePrompt] = useState('')
   const [claudeResponse, setClaudeResponse] = useState<any>(null)
@@ -84,8 +105,214 @@ const CreateStoryPage: React.FC = () => {
   }>({ type: null, message: '' })
 
   const { isOpen: isLanguagesOpen, onToggle: onToggleLanguages } = useDisclosure()
+  const { isOpen: isLoadSectionOpen, onToggle: onToggleLoadSection } = useDisclosure()
   const toast = useToast()
   const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Load existing stories on component mount
+  useEffect(() => {
+    console.log('🔄 Component mounted, fetching existing stories...')
+    fetchExistingStories()
+  }, [])
+
+  // Handle URL edit parameter after stories are loaded
+  useEffect(() => {
+    const editSlug = searchParams.get('edit')
+    console.log('🔍 URL edit parameter check:', { editSlug, storiesLoaded: existingStories.length })
+
+    if (editSlug && existingStories.length > 0) {
+      console.log('📝 Processing edit request for slug:', editSlug)
+      console.log(
+        '📚 Available stories:',
+        existingStories.map(s => ({ slug: s.slug, title: s.title }))
+      )
+
+      setSelectedStorySlug(editSlug)
+      if (existingStories.some(story => story.slug === editSlug)) {
+        console.log('✅ Story found, loading for editing:', editSlug)
+        loadStoryForEditing(editSlug)
+      } else {
+        console.log('❌ Story not found:', editSlug)
+        console.log(
+          '📝 Available story slugs:',
+          existingStories.map(s => s.slug)
+        )
+        toast({
+          title: 'Story Not Found',
+          description: `Story "${editSlug}" does not exist. Available stories: ${existingStories.map(s => s.slug).join(', ')}`,
+          status: 'error',
+          duration: 7000,
+        })
+        // Clear the invalid edit parameter from URL
+        const url = new URL(window.location.href)
+        url.searchParams.delete('edit')
+        window.history.replaceState({}, '', url.toString())
+        console.log('🧹 Cleared invalid edit parameter from URL')
+      }
+    } else if (editSlug && existingStories.length === 0) {
+      console.log('⏳ Edit slug found but stories not loaded yet:', editSlug)
+    }
+  }, [existingStories, searchParams])
+
+  // Fetch all existing stories
+  const fetchExistingStories = async () => {
+    console.log('📡 Starting fetchExistingStories...')
+    setIsLoadingStories(true)
+    try {
+      console.log('🔗 Making request to /api/admin/stories')
+      const response = await fetch('/api/admin/stories')
+      console.log('📡 Response status:', response.status, response.statusText)
+
+      const data = await response.json()
+      console.log('📦 Response data:', data)
+
+      if (data.success) {
+        console.log('✅ Stories fetched successfully:', data.stories.length, 'stories')
+        console.log(
+          '📚 Story details:',
+          data.stories.map(s => ({ slug: s.slug, title: s.title, id: s.id }))
+        )
+        setExistingStories(data.stories)
+      } else {
+        console.error('❌ API returned error:', data.error)
+        toast({
+          title: 'Failed to load stories',
+          description: data.error || 'Could not fetch existing stories',
+          status: 'error',
+          duration: 3000,
+        })
+      }
+    } catch (error) {
+      console.error('💥 Error fetching stories:', error)
+      toast({
+        title: 'Network Error',
+        description: 'Failed to connect to the server',
+        status: 'error',
+        duration: 3000,
+      })
+    } finally {
+      setIsLoadingStories(false)
+      console.log('🏁 fetchExistingStories completed')
+    }
+  }
+
+  // Load a specific story for editing
+  const loadStoryForEditing = async (slug: string) => {
+    console.log('📖 Starting loadStoryForEditing for slug:', slug)
+    if (!slug) {
+      console.log('❌ No slug provided to loadStoryForEditing')
+      return
+    }
+
+    setIsLoadingStory(true)
+    try {
+      console.log('🔗 Making request to /api/admin/stories/', slug)
+      const response = await fetch(`/api/admin/stories/${slug}`)
+      console.log('📡 Response status:', response.status, response.statusText)
+
+      const data = await response.json()
+      console.log('📦 Story load response:', data)
+
+      if (data.success && data.story) {
+        const story = data.story
+        console.log('✅ Story loaded successfully:', {
+          slug: story.slug,
+          title: story.title,
+          contentLength: story.content?.length,
+          homepageDisplayKeys: Object.keys(story.homepage_display || {}),
+        })
+
+        setFormData({
+          slug: story.slug,
+          title: story.title,
+          content: story.content,
+          homepage_display: story.homepage_display || {
+            en: { title: '', description: '' },
+            fr: { title: '', description: '' },
+          },
+        })
+        setEditMode(true)
+
+        toast({
+          title: 'Story Loaded',
+          description: `"${story.title}" is now ready for editing`,
+          status: 'success',
+          duration: 3000,
+        })
+      } else {
+        console.error('❌ Story load failed:', data.error || 'Story not found')
+        toast({
+          title: 'Story Not Found',
+          description: data.error || `Could not find story: ${slug}`,
+          status: 'error',
+          duration: 3000,
+        })
+      }
+    } catch (error) {
+      console.error('💥 Error loading story:', error)
+      toast({
+        title: 'Load Error',
+        description: 'Failed to load the selected story',
+        status: 'error',
+        duration: 3000,
+      })
+    } finally {
+      setIsLoadingStory(false)
+      console.log('🏁 loadStoryForEditing completed for slug:', slug)
+    }
+  }
+
+  // Handle story selection change
+  const handleStorySelection = (slug: string) => {
+    console.log('🎯 handleStorySelection called with slug:', slug)
+    console.log(
+      '📚 Current existingStories:',
+      existingStories.map(s => s.slug)
+    )
+
+    setSelectedStorySlug(slug)
+    if (slug && existingStories.some(story => story.slug === slug)) {
+      console.log('✅ Valid story selected, loading:', slug)
+      loadStoryForEditing(slug)
+    } else if (slug) {
+      console.log('❌ Invalid story selected:', slug)
+      console.log(
+        '📝 Available options:',
+        existingStories.map(s => s.slug)
+      )
+      toast({
+        title: 'Invalid Story',
+        description: `Story "${slug}" not found in the available stories.`,
+        status: 'warning',
+        duration: 3000,
+      })
+      setSelectedStorySlug('')
+    } else {
+      console.log('🚫 Empty slug provided')
+    }
+  }
+
+  // Reset form to create new story
+  const resetToNewStory = () => {
+    setFormData({
+      slug: '',
+      title: '',
+      content: '',
+      homepage_display: {
+        en: { title: '', description: '' },
+        fr: { title: '', description: '' },
+      },
+    })
+    setSelectedStorySlug('')
+    setEditMode(false)
+    setSubmitStatus({ type: null, message: '' })
+
+    // Update URL to remove edit parameter
+    const url = new URL(window.location.href)
+    url.searchParams.delete('edit')
+    window.history.replaceState({}, '', url.toString())
+  }
 
   // Generate slug from title
   const generateSlug = (title: string): string => {
@@ -103,7 +330,7 @@ const CreateStoryPage: React.FC = () => {
     setFormData(prev => ({
       ...prev,
       [field]: value,
-      ...(field === 'title' && { slug: generateSlug(value) }),
+      ...(field === 'title' && !editMode && { slug: generateSlug(value) }),
     }))
   }
 
@@ -273,6 +500,10 @@ Generate a complete story specification now:`
               },
             })
 
+            // Switch to create mode if we were editing
+            setEditMode(false)
+            setSelectedStorySlug('')
+
             toast({
               title: 'Story Generated & Form Pre-filled!',
               description:
@@ -348,17 +579,23 @@ Generate a complete story specification now:`
       const result = await response.json()
 
       if (result.success) {
+        const actionText = editMode ? 'updated' : 'created'
         setSubmitStatus({
           type: 'success',
-          message: `Story "${result.story.title}" has been created successfully!`,
+          message: `Story "${result.story.title}" has been ${actionText} successfully!`,
         })
 
         toast({
-          title: 'Story Created',
+          title: `Story ${editMode ? 'Updated' : 'Created'}`,
           description: `"${result.story.title}" is now available`,
           status: 'success',
           duration: 5000,
         })
+
+        // Refresh the stories list if we were editing
+        if (editMode) {
+          await fetchExistingStories()
+        }
 
         // Redirect to homepage after a delay
         setTimeout(() => {
@@ -367,22 +604,18 @@ Generate a complete story specification now:`
       } else {
         setSubmitStatus({
           type: 'error',
-          message: result.error || 'Failed to create story',
+          message: result.error || `Failed to ${editMode ? 'update' : 'create'} story`,
         })
       }
     } catch (error) {
       setSubmitStatus({
         type: 'error',
-        message: 'Network error: Failed to save story',
+        message: `Network error: Failed to ${editMode ? 'update' : 'save'} story`,
       })
     } finally {
       setIsSubmitting(false)
     }
   }
-
-  const availableLanguages = Object.keys(LANGUAGE_NAMES).filter(
-    lang => !Object.keys(formData.homepage_display).includes(lang)
-  )
 
   return (
     <Container maxW="container.lg" py={10}>
@@ -390,144 +623,268 @@ Generate a complete story specification now:`
         {/* Header */}
         <Box textAlign="center">
           <Heading size="xl" mb={4}>
-            Create Your Own Story
+            {editMode ? `Edit Story: ${formData.title}` : 'Create Your Own Story'}
           </Heading>
           <Text color="gray.500" fontSize="lg">
-            Generate stories manually or with the help of our faithful assistant
+            {editMode
+              ? 'Modify your existing story or create a new one'
+              : 'Generate stories manually or with the help of our faithful assistant'}
           </Text>
         </Box>
 
-        {/* Claude Generation Section */}
+        {/* Load Existing Story Section */}
         <Box>
-          <VStack spacing={4} align="stretch">
-            <Heading as="h2" size="md" color="blue.400">
-              <HStack>
-                <FaEdit />
-                <Text>Generate with Rukh AI</Text>
-              </HStack>
-            </Heading>
-
-            <Text fontSize="sm" color="gray.500">
-              Describe your story idea and Rukh will generate a complete adventure with multilingual
-              content.
-            </Text>
-
-            <VStack spacing={3} align="stretch">
-              <FormControl>
-                <FormLabel>
-                  Describe your story idea. The more detail you give (content, tone, milestones,
-                  ...), the better the story will be!
-                </FormLabel>
-                <Textarea
-                  value={claudePrompt}
-                  onChange={e => setClaudePrompt(e.target.value)}
-                  placeholder="Example: Create an adventure about working as a sound technician for Queen during their 1986 Wembley concert. Include technical challenges and interactions with band members..."
-                  rows={4}
-                  resize="vertical"
-                />
-              </FormControl>
-
-              <HStack>
-                <Button
-                  leftIcon={<FaEdit />}
-                  colorScheme="blue"
-                  onClick={handleClaudeRequest}
-                  isLoading={isSendingToClaude}
-                  loadingText="Generating..."
-                  disabled={!claudePrompt.trim()}
-                >
-                  Generate Story
-                </Button>
-              </HStack>
-
-              {/* Claude Response Display */}
-              {claudeResponse && (
-                <Box>
-                  {claudeResponse.error ? (
-                    <Alert status="error">
-                      <AlertIcon />
-                      <Box>
-                        <AlertTitle>Generation Failed</AlertTitle>
-                        <AlertDescription>{claudeResponse.error}</AlertDescription>
-                      </Box>
-                    </Alert>
-                  ) : (
-                    <Box
-                      p={4}
-                      bg="gray.50"
-                      borderRadius="md"
-                      borderLeft="4px solid"
-                      borderColor="blue.400"
-                      _dark={{ bg: 'gray.700' }}
-                    >
-                      <VStack spacing={3} align="stretch">
-                        <HStack justify="space-between">
-                          <HStack>
-                            <FaEdit color="#4299E1" />
-                            <Text fontWeight="bold" color="blue.400">
-                              Story Generated
-                            </Text>
-                          </HStack>
-                          {claudeResponse.usage && (
-                            <Badge variant="outline" colorScheme="blue" fontSize="xs">
-                              {claudeResponse.usage.output_tokens} tokens
-                            </Badge>
-                          )}
-                        </HStack>
-
-                        <Text fontSize="sm" color="green.600" fontWeight="medium">
-                          ✅ Form has been pre-filled with the generated story. Review the content
-                          below and make any adjustments needed.
-                        </Text>
-
-                        {/* Show blockchain transaction info if available */}
-                        {claudeResponse.txHash && (
-                          <Box
-                            pt={2}
-                            borderTop="1px solid"
-                            borderColor="gray.200"
-                            _dark={{ borderColor: 'gray.600' }}
-                          >
-                            <VStack spacing={1} align="stretch">
-                              <Text fontSize="xs" color="gray.500" fontWeight="medium">
-                                Blockchain Transaction:
-                              </Text>
-                              <HStack justify="space-between" fontSize="xs">
-                                <Text color="gray.600">Network:</Text>
-                                <Badge variant="subtle" colorScheme="green">
-                                  {claudeResponse.network || 'Unknown'}
-                                </Badge>
-                              </HStack>
-                              {claudeResponse.explorerLink && (
-                                <HStack justify="space-between" fontSize="xs">
-                                  <Text color="gray.600">Transaction:</Text>
-                                  <Button
-                                    as="a"
-                                    href={claudeResponse.explorerLink}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    size="xs"
-                                    variant="link"
-                                    colorScheme="blue"
-                                    fontFamily="mono"
-                                  >
-                                    {claudeResponse.txHash.slice(0, 10)}...
-                                  </Button>
-                                </HStack>
-                              )}
-                            </VStack>
-                          </Box>
-                        )}
-                      </VStack>
-                    </Box>
+          <FormControl>
+            <FormLabel>
+              <HStack justify="space-between" w="100%">
+                <HStack>
+                  <FaUpload />
+                  <Text>Load Existing Story for Editing</Text>
+                  {editMode && (
+                    <Badge colorScheme="blue" variant="solid">
+                      Editing Mode
+                    </Badge>
                   )}
-                </Box>
-              )}
-            </VStack>
-          </VStack>
+                </HStack>
+                <IconButton
+                  aria-label="Toggle load section"
+                  icon={isLoadSectionOpen ? <FaChevronUp /> : <FaChevronDown />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={onToggleLoadSection}
+                />
+              </HStack>
+            </FormLabel>
+
+            <Collapse in={isLoadSectionOpen}>
+              <Box
+                p={4}
+                borderWidth="1px"
+                borderRadius="md"
+                bg="gray.50"
+                _dark={{ bg: 'gray.700' }}
+                mt={2}
+              >
+                <VStack spacing={4} align="stretch">
+                  <Text fontSize="sm" color="gray.600">
+                    Select an existing story to edit, or create a new one from scratch.
+                  </Text>
+
+                  <HStack spacing={4} align="end">
+                    <FormControl flex={1}>
+                      <FormLabel size="sm">Select Story to Edit</FormLabel>
+                      {isLoadingStories ? (
+                        <HStack p={2}>
+                          <Spinner size="sm" />
+                          <Text fontSize="sm">Loading stories...</Text>
+                        </HStack>
+                      ) : (
+                        <Select
+                          value={selectedStorySlug}
+                          onChange={e => handleStorySelection(e.target.value)}
+                          placeholder="Choose a story to edit..."
+                          bg="white"
+                          _dark={{ bg: 'gray.600' }}
+                        >
+                          {existingStories.map(story => (
+                            <option key={story.slug} value={story.slug}>
+                              {story.title} ({story.slug})
+                            </option>
+                          ))}
+                        </Select>
+                      )}
+                    </FormControl>
+
+                    <Button
+                      leftIcon={<FaUpload />}
+                      colorScheme="blue"
+                      variant="outline"
+                      onClick={() => {
+                        if (
+                          selectedStorySlug &&
+                          existingStories.some(story => story.slug === selectedStorySlug)
+                        ) {
+                          handleStorySelection(selectedStorySlug)
+                        } else {
+                          toast({
+                            title: 'No Story Selected',
+                            description: 'Please select a valid story from the dropdown first.',
+                            status: 'warning',
+                            duration: 3000,
+                          })
+                        }
+                      }}
+                      isLoading={isLoadingStory}
+                      loadingText="Loading..."
+                      disabled={
+                        !selectedStorySlug ||
+                        !existingStories.some(story => story.slug === selectedStorySlug)
+                      }
+                    >
+                      Load Story
+                    </Button>
+
+                    {editMode && (
+                      <Button
+                        leftIcon={<FaPlus />}
+                        colorScheme="green"
+                        variant="outline"
+                        onClick={resetToNewStory}
+                      >
+                        New Story
+                      </Button>
+                    )}
+                  </HStack>
+
+                  {existingStories.length === 0 && !isLoadingStories && (
+                    <Alert status="info">
+                      <AlertIcon />
+                      <Text fontSize="sm">
+                        No existing stories found. Create your first story below!
+                      </Text>
+                    </Alert>
+                  )}
+                </VStack>
+              </Box>
+            </Collapse>
+          </FormControl>
         </Box>
 
-        <Divider />
+        {!editMode && <Divider />}
+
+        {/* Claude Generation Section */}
+        {!editMode && (
+          <Box>
+            <VStack spacing={4} align="stretch">
+              <Heading as="h2" size="md" color="blue.400">
+                <HStack>
+                  <FaEdit />
+                  <Text>Generate with Rukh AI</Text>
+                </HStack>
+              </Heading>
+
+              <Text fontSize="sm" color="gray.500">
+                Describe your story idea and Rukh will generate a complete adventure with
+                multilingual content.
+              </Text>
+
+              <VStack spacing={3} align="stretch">
+                <FormControl>
+                  <FormLabel>
+                    Describe your story idea. The more detail you give (content, tone, milestones,
+                    ...), the better the story will be!
+                  </FormLabel>
+                  <Textarea
+                    value={claudePrompt}
+                    onChange={e => setClaudePrompt(e.target.value)}
+                    placeholder="Example: Create an adventure about working as a sound technician for Queen during their 1986 Wembley concert. Include technical challenges and interactions with band members..."
+                    rows={4}
+                    resize="vertical"
+                  />
+                </FormControl>
+
+                <HStack>
+                  <Button
+                    leftIcon={<FaEdit />}
+                    colorScheme="blue"
+                    onClick={handleClaudeRequest}
+                    isLoading={isSendingToClaude}
+                    loadingText="Generating..."
+                    disabled={!claudePrompt.trim()}
+                  >
+                    Generate Story
+                  </Button>
+                </HStack>
+
+                {/* Claude Response Display */}
+                {claudeResponse && (
+                  <Box>
+                    {claudeResponse.error ? (
+                      <Alert status="error">
+                        <AlertIcon />
+                        <Box>
+                          <AlertTitle>Generation Failed</AlertTitle>
+                          <AlertDescription>{claudeResponse.error}</AlertDescription>
+                        </Box>
+                      </Alert>
+                    ) : (
+                      <Box
+                        p={4}
+                        bg="gray.50"
+                        borderRadius="md"
+                        borderLeft="4px solid"
+                        borderColor="blue.400"
+                        _dark={{ bg: 'gray.700' }}
+                      >
+                        <VStack spacing={3} align="stretch">
+                          <HStack justify="space-between">
+                            <HStack>
+                              <FaEdit color="#4299E1" />
+                              <Text fontWeight="bold" color="blue.400">
+                                Story Generated
+                              </Text>
+                            </HStack>
+                            {claudeResponse.usage && (
+                              <Badge variant="outline" colorScheme="blue" fontSize="xs">
+                                {claudeResponse.usage.output_tokens} tokens
+                              </Badge>
+                            )}
+                          </HStack>
+
+                          <Text fontSize="sm" color="green.600" fontWeight="medium">
+                            ✅ Form has been pre-filled with the generated story. Review the content
+                            below and make any adjustments needed.
+                          </Text>
+
+                          {/* Show blockchain transaction info if available */}
+                          {claudeResponse.txHash && (
+                            <Box
+                              pt={2}
+                              borderTop="1px solid"
+                              borderColor="gray.200"
+                              _dark={{ borderColor: 'gray.600' }}
+                            >
+                              <VStack spacing={1} align="stretch">
+                                <Text fontSize="xs" color="gray.500" fontWeight="medium">
+                                  Blockchain Transaction:
+                                </Text>
+                                <HStack justify="space-between" fontSize="xs">
+                                  <Text color="gray.600">Network:</Text>
+                                  <Badge variant="subtle" colorScheme="green">
+                                    {claudeResponse.network || 'Unknown'}
+                                  </Badge>
+                                </HStack>
+                                {claudeResponse.explorerLink && (
+                                  <HStack justify="space-between" fontSize="xs">
+                                    <Text color="gray.600">Transaction:</Text>
+                                    <Button
+                                      as="a"
+                                      href={claudeResponse.explorerLink}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      size="xs"
+                                      variant="link"
+                                      colorScheme="blue"
+                                      fontFamily="mono"
+                                    >
+                                      {claudeResponse.txHash.slice(0, 10)}...
+                                    </Button>
+                                  </HStack>
+                                )}
+                              </VStack>
+                            </Box>
+                          )}
+                        </VStack>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+              </VStack>
+            </VStack>
+          </Box>
+        )}
+
+        {!editMode && <Divider />}
 
         {/* Story Form */}
         <VStack spacing={6} align="stretch">
@@ -550,15 +907,16 @@ Generate a complete story specification now:`
               <FormLabel>
                 Story Slug{' '}
                 <Text as="span" fontSize="sm" color="gray.500">
-                  (auto-generated)
+                  {editMode ? '(cannot be changed)' : '(auto-generated)'}
                 </Text>
               </FormLabel>
               <Input
                 value={formData.slug}
                 onChange={e => handleInputChange('slug', e.target.value)}
                 placeholder="story-slug"
-                bg="gray.50"
-                _dark={{ bg: 'gray.700' }}
+                bg={editMode ? 'gray.100' : 'gray.50'}
+                _dark={{ bg: editMode ? 'gray.600' : 'gray.700' }}
+                isReadOnly={editMode}
               />
               <Text fontSize="xs" color="gray.500" mt={1}>
                 URL will be: /{formData.slug}
@@ -708,7 +1066,7 @@ Generate a complete story specification now:`
               size="lg"
               onClick={handleSubmit}
               isLoading={isSubmitting}
-              loadingText="Saving Story..."
+              loadingText={editMode ? 'Updating Story...' : 'Saving Story...'}
               disabled={
                 !formData.title ||
                 !formData.content ||
@@ -716,7 +1074,7 @@ Generate a complete story specification now:`
                 !formData.homepage_display.en?.description
               }
             >
-              Create Story
+              {editMode ? 'Update Story' : 'Create Story'}
             </Button>
 
             {submitStatus.type && (
@@ -724,7 +1082,13 @@ Generate a complete story specification now:`
                 <AlertIcon />
                 <Box>
                   <AlertTitle>
-                    {submitStatus.type === 'success' ? 'Story Created!' : 'Creation Failed'}
+                    {submitStatus.type === 'success'
+                      ? editMode
+                        ? 'Story Updated!'
+                        : 'Story Created!'
+                      : editMode
+                        ? 'Update Failed'
+                        : 'Creation Failed'}
                   </AlertTitle>
                   <AlertDescription>{submitStatus.message}</AlertDescription>
                 </Box>
