@@ -194,7 +194,7 @@ const CreateStoryPage: React.FC = () => {
       formData.append('model', 'anthropic')
       formData.append('sessionId', '')
       formData.append('walletAddress', '')
-      formData.append('context', 'rukh')
+      formData.append('context', 'avventura')
       formData.append('data', '')
       formData.append('file', '')
 
