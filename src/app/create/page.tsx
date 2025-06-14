@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import {
   Container,
   VStack,
@@ -77,7 +77,7 @@ interface ExistingStory {
   updated_at: string
 }
 
-const CreateStoryPage: React.FC = () => {
+const CreateStoryContent: React.FC = () => {
   const [formData, setFormData] = useState<StoryFormData>({
     slug: '',
     title: '',
@@ -1051,6 +1051,25 @@ Generate a complete story specification now:`
         </VStack>
       </VStack>
     </Container>
+  )
+}
+
+// Loading fallback component
+const CreateStoryFallback: React.FC = () => (
+  <Container maxW="container.lg" py={10}>
+    <VStack spacing={8} align="center">
+      <Spinner size="xl" />
+      <Text>Loading story editor...</Text>
+    </VStack>
+  </Container>
+)
+
+// Main component with Suspense boundary
+const CreateStoryPage: React.FC = () => {
+  return (
+    <Suspense fallback={<CreateStoryFallback />}>
+      <CreateStoryContent />
+    </Suspense>
   )
 }
 
