@@ -48,7 +48,7 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ['@reown/appkit', '@walletconnect/universal-provider'],
   },
 
-  // Add proxy rewrites for development
+  // Add proxy rewrites for development and production
   async rewrites() {
     return [
       {

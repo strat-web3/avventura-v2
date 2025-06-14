@@ -198,7 +198,7 @@ const CreateStoryPage: React.FC = () => {
       formData.append('data', '')
       formData.append('file', '')
 
-      // Use the proxy endpoint instead of the external URL
+      // Use the proxy endpoint (works in both local and Netlify)
       const response = await fetch('/api/proxy/claude/ask', {
         method: 'POST',
         body: formData,
