@@ -1,4 +1,3 @@
-// src/app/create/page.tsx - Original version with background English fallback
 'use client'
 
 import React, { useState } from 'react'
@@ -30,44 +29,52 @@ import {
   FaTrash,
   FaChevronDown,
   FaChevronUp,
+  FaRobot,
+  FaEdit,
   FaSave,
   FaEye,
-  FaQuestionCircle,
-  FaBook,
+  FaLanguage,
 } from 'react-icons/fa'
+import { useLanguage } from '@/context/LanguageContext'
+import { useTranslation } from '@/hooks/useTranslation'
 import Link from 'next/link'
 
-interface HomepageTranslation {
+interface LanguageContent {
   title: string
   description: string
 }
 
-interface HomepageDisplay {
-  [languageCode: string]: HomepageTranslation
-}
-
-interface StoryForm {
+interface StoryFormData {
   slug: string
   title: string
   content: string
-  homepage_display: HomepageDisplay
+  homepage_display: Record<string, LanguageContent>
 }
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'zh', name: '中文 (Chinese)' },
-  { code: 'hi', name: 'हिन्दी (Hindi)' },
-  { code: 'es', name: 'Español (Spanish)' },
-  { code: 'fr', name: 'Français (French)' },
-  { code: 'ar', name: 'العربية (Arabic)' },
-  { code: 'bn', name: 'বাংলা (Bengali)' },
-  { code: 'ru', name: 'Русский (Russian)' },
-  { code: 'pt', name: 'Português (Portuguese)' },
-  { code: 'ur', name: 'اردو (Urdu)' },
-]
+interface ClaudeEditorResponse {
+  output?: string
+  model?: string
+  network?: string
+  txHash?: string
+  explorerLink?: string
+  sessionId?: string
+  usage?: {
+    input_tokens: number
+    cache_creation_input_tokens: number
+    cache_read_input_tokens: number
+    output_tokens: number
+    service_tier: string
+  }
+  error?: string
+}
 
-const StoryCreator: React.FC = () => {
-  const [form, setForm] = useState<StoryForm>({
+const CreateStoryPage: React.FC = () => {
+  const { language } = useLanguage()
+  const t = useTranslation()
+  const toast = useToast()
+
+  // Main form state
+  const [formData, setFormData] = useState<StoryFormData>({
     slug: '',
     title: '',
     content: '',
@@ -75,53 +82,166 @@ const StoryCreator: React.FC = () => {
       en: { title: '', description: '' },
     },
   })
-  const [loading, setLoading] = useState(false)
-  const [errors, setErrors] = useState<Record<string, string>>({})
-  const toast = useToast()
-  const { isOpen: isPreviewOpen, onToggle: togglePreview } = useDisclosure()
-  const { isOpen: isHelpOpen, onToggle: toggleHelp } = useDisclosure()
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {}
+  // Claude editor state
+  const [claudeInstructions, setClaudeInstructions] = useState('')
+  const [claudeResponse, setClaudeResponse] = useState<ClaudeEditorResponse | null>(null)
+  const [isClaudeLoading, setIsClaudeLoading] = useState(false)
 
-    // Validate slug
-    if (!form.slug.trim()) {
-      newErrors.slug = 'Slug is required'
-    } else if (!/^[a-z0-9-]+$/.test(form.slug)) {
-      newErrors.slug = 'Slug must contain only lowercase letters, numbers, and hyphens'
-    }
+  // UI state
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitResult, setSubmitResult] = useState<{ success: boolean; message: string } | null>(
+    null
+  )
+  const { isOpen: isLanguagesOpen, onToggle: onLanguagesToggle } = useDisclosure()
 
-    // Validate title
-    if (!form.title.trim()) {
-      newErrors.title = 'Title is required'
-    }
+  // Supported languages
+  const supportedLanguages = [
+    { code: 'en', name: 'English', required: true },
+    { code: 'fr', name: 'Français' },
+    { code: 'es', name: 'Español' },
+    { code: 'zh', name: '中文' },
+    { code: 'hi', name: 'हिन्दी' },
+    { code: 'ar', name: 'العربية' },
+    { code: 'bn', name: 'বাংলা' },
+    { code: 'ru', name: 'Русский' },
+    { code: 'pt', name: 'Português' },
+    { code: 'ur', name: 'اردو' },
+  ]
 
-    // Validate content
-    if (!form.content.trim()) {
-      newErrors.content = 'Story content is required'
-    } else if (form.content.length < 100) {
-      newErrors.content = 'Story content must be at least 100 characters long'
-    }
-
-    // Validate at least English homepage translation is provided
-    if (!form.homepage_display.en?.title?.trim()) {
-      newErrors['homepage_en_title'] = 'English title is required'
-    }
-    if (!form.homepage_display.en?.description?.trim()) {
-      newErrors['homepage_en_description'] = 'English description is required'
-    }
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+  // Generate slug from title
+  const generateSlug = (title: string): string => {
+    return title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Handle form input changes
+  const handleInputChange = (field: keyof StoryFormData, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value,
+      ...(field === 'title' && { slug: generateSlug(value) }),
+    }))
+  }
 
-    if (!validateForm()) {
+  // Handle homepage display changes
+  const handleHomepageDisplayChange = (
+    langCode: string,
+    field: keyof LanguageContent,
+    value: string
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      homepage_display: {
+        ...prev.homepage_display,
+        [langCode]: {
+          ...prev.homepage_display[langCode],
+          [field]: value,
+        },
+      },
+    }))
+  }
+
+  // Add language to homepage display
+  const addLanguage = (langCode: string) => {
+    if (!formData.homepage_display[langCode]) {
+      setFormData(prev => ({
+        ...prev,
+        homepage_display: {
+          ...prev.homepage_display,
+          [langCode]: { title: '', description: '' },
+        },
+      }))
+    }
+  }
+
+  // Remove language from homepage display
+  const removeLanguage = (langCode: string) => {
+    if (langCode === 'en') return // Don't allow removing English
+
+    setFormData(prev => {
+      const newHomepageDisplay = { ...prev.homepage_display }
+      delete newHomepageDisplay[langCode]
+      return {
+        ...prev,
+        homepage_display: newHomepageDisplay,
+      }
+    })
+  }
+
+  // Handle Claude editor request
+  const handleClaudeRequest = async () => {
+    if (!claudeInstructions.trim()) {
+      toast({
+        title: 'Input Required',
+        description: 'Please enter instructions for Claude before sending.',
+        status: 'warning',
+        duration: 3000,
+        isClosable: true,
+      })
+      return
+    }
+
+    setIsClaudeLoading(true)
+    setClaudeResponse(null)
+
+    try {
+      // Create FormData for multipart/form-data request
+      const formData = new FormData()
+      formData.append('message', claudeInstructions)
+      formData.append('model', 'anthropic')
+      formData.append('sessionId', '')
+      formData.append('walletAddress', '')
+      formData.append('context', 'rukh')
+      formData.append('data', '')
+      formData.append('file', '')
+
+      const response = await fetch('https://rukh.w3hc.org/ask', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+
+      const data: ClaudeEditorResponse = await response.json()
+      setClaudeResponse(data)
+
+      toast({
+        title: 'Claude Response Received',
+        description: 'Story instructions have been processed by Claude.',
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      })
+    } catch (error) {
+      console.error('Claude request failed:', error)
+
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      setClaudeResponse({ error: errorMessage })
+
+      toast({
+        title: 'Claude Request Failed',
+        description: errorMessage,
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      })
+    } finally {
+      setIsClaudeLoading(false)
+    }
+  }
+
+  // Handle form submission
+  const handleSubmit = async () => {
+    // Validation
+    if (!formData.slug || !formData.title || !formData.content) {
       toast({
         title: 'Validation Error',
-        description: 'Please fix the errors below before submitting.',
+        description: 'Please fill in all required fields (Title and Content).',
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -129,488 +249,445 @@ const StoryCreator: React.FC = () => {
       return
     }
 
-    setLoading(true)
+    if (!formData.homepage_display.en?.title || !formData.homepage_display.en?.description) {
+      toast({
+        title: 'Validation Error',
+        description: 'English title and description are required.',
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      })
+      return
+    }
+
+    setIsSubmitting(true)
+    setSubmitResult(null)
 
     try {
-      console.log('📤 Submitting story with English fallback support:', form)
-
       const response = await fetch('/api/admin/stories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(form),
+        body: JSON.stringify(formData),
       })
 
       const data = await response.json()
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to create story')
+      if (data.success) {
+        setSubmitResult({
+          success: true,
+          message: `Story "${formData.title}" has been saved successfully!`,
+        })
+
+        toast({
+          title: 'Story Created',
+          description: `Your story "${formData.title}" is now available to play.`,
+          status: 'success',
+          duration: 5000,
+          isClosable: true,
+        })
+
+        // Reset form
+        setFormData({
+          slug: '',
+          title: '',
+          content: '',
+          homepage_display: {
+            en: { title: '', description: '' },
+          },
+        })
+      } else {
+        throw new Error(data.error || 'Failed to save story')
       }
-
-      toast({
-        title: 'Success! 🎉',
-        description: `Story "${form.title}" has been created and is available in ${data.availableLanguages?.length || 10} languages!`,
-        status: 'success',
-        duration: 5000,
-        isClosable: true,
-      })
-
-      console.log('✅ Story created with automatic language fallbacks:', data.story)
-
-      // Reset form
-      setForm({
-        slug: '',
-        title: '',
-        content: '',
-        homepage_display: {
-          en: { title: '', description: '' },
-        },
-      })
-      setErrors({})
     } catch (error) {
-      console.error('Error creating story:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+      setSubmitResult({
+        success: false,
+        message: errorMessage,
+      })
+
       toast({
-        title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create story',
+        title: 'Save Failed',
+        description: errorMessage,
         status: 'error',
         duration: 5000,
         isClosable: true,
       })
     } finally {
-      setLoading(false)
+      setIsSubmitting(false)
     }
   }
-
-  const generateSlugFromTitle = () => {
-    const slug = form.title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '') // Remove special characters
-      .replace(/\s+/g, '-') // Replace spaces with hyphens
-      .replace(/-+/g, '-') // Replace multiple hyphens with single
-      .trim()
-
-    setForm(prev => ({ ...prev, slug }))
-  }
-
-  const addLanguage = (languageCode: string) => {
-    if (!form.homepage_display[languageCode]) {
-      setForm(prev => ({
-        ...prev,
-        homepage_display: {
-          ...prev.homepage_display,
-          [languageCode]: { title: '', description: '' },
-        },
-      }))
-    }
-  }
-
-  const removeLanguage = (languageCode: string) => {
-    if (languageCode !== 'en') {
-      // Only English is required now
-      const newDisplay = { ...form.homepage_display }
-      delete newDisplay[languageCode]
-      setForm(prev => ({ ...prev, homepage_display: newDisplay }))
-    }
-  }
-
-  const updateHomepageDisplay = (
-    languageCode: string,
-    field: 'title' | 'description',
-    value: string
-  ) => {
-    setForm(prev => ({
-      ...prev,
-      homepage_display: {
-        ...prev.homepage_display,
-        [languageCode]: {
-          ...prev.homepage_display[languageCode],
-          [field]: value,
-        },
-      },
-    }))
-  }
-
-  const availableLanguages = SUPPORTED_LANGUAGES.filter(lang => !form.homepage_display[lang.code])
 
   return (
-    <Container maxW="container.lg" py={8}>
+    <Container maxW="container.lg" py={10}>
       <VStack spacing={8} align="stretch">
         {/* Header */}
         <VStack spacing={4} align="center">
-          <Heading size="xl" textAlign="center">
-            🧪 Story Labs
+          <Heading as="h1" size="xl" textAlign="center">
+            Create Your Story
           </Heading>
-          <Text fontSize="lg" color="gray.400" textAlign="center" maxW="600px">
-            Create your own interactive adventure story! Your story will be automatically available
-            in all supported languages.
+          <Text textAlign="center" color="gray.500" maxW="2xl">
+            Design an interactive adventure that will be available in 10 languages. Use Claude to
+            help craft your story instructions, then build your complete adventure.
           </Text>
         </VStack>
 
-        {/* Info Alert */}
-        <Alert status="info" borderRadius="md">
-          <AlertIcon />
-          <Box>
-            <AlertTitle>Story Creation Guidelines</AlertTitle>
-            <AlertDescription>
-              Your story should include educational content, clear milestones, and be appropriate
-              for all ages. Stories will be playable in all supported languages through AI
-              translation. English translation is required - other languages are optional and will
-              automatically use English content if not provided.
-            </AlertDescription>
-          </Box>
-        </Alert>
-
-        {/* Help Section */}
+        {/* Claude Editor Section */}
         <Box>
-          <Button leftIcon={<FaQuestionCircle />} variant="outline" onClick={toggleHelp} mb={4}>
-            {isHelpOpen ? 'Hide' : 'Show'} Story Creation Guide
-          </Button>
-          <Collapse in={isHelpOpen}>
-            <Box
-              p={6}
-              border="1px"
-              borderColor="blue.500"
-              borderRadius="md"
-              bg="blue.900"
-              _dark={{ bg: 'blue.900' }}
-            >
-              <VStack spacing={4} align="stretch">
-                <Heading size="md" color="blue.600" _dark={{ color: 'blue.300' }}>
-                  📖 How to Create a Great Story
-                </Heading>
+          <VStack spacing={4} align="stretch">
+            <Heading as="h2" size="md" color="blue.400">
+              <HStack>
+                <FaRobot />
+                <Text>Edit your story instructions with Claude</Text>
+              </HStack>
+            </Heading>
 
-                <Box>
-                  <Text fontWeight="bold" mb={2}>
-                    Required Sections:
-                  </Text>
-                  <VStack spacing={2} align="stretch" pl={4}>
-                    <Text>
-                      • <strong>Setting:</strong> Describe the world, time period, and environment
-                    </Text>
-                    <Text>
-                      • <strong>Starting Scene:</strong> The opening scene where adventure begins
-                    </Text>
-                    <Text>
-                      • <strong>Story Context:</strong> Main character and educational objectives
-                    </Text>
-                    <Text>
-                      • <strong>Milestones:</strong> Key achievement moments in the adventure
-                    </Text>
-                  </VStack>
-                </Box>
+            <Text fontSize="sm" color="gray.500">
+              Get help from Claude to refine your story concept, structure, and educational content.
+            </Text>
 
-                <Box>
-                  <Text fontWeight="bold" mb={2}>
-                    Example Template:
-                  </Text>
-                  <Box bg="gray.800" p={3} borderRadius="md" fontSize="sm">
-                    <pre>{`# Adventure Title
-
-## Setting
-Describe the world and time period...
-
-## Starting Scene  
-You find yourself in [location]. The [sensory details]...
-
-## Story Context
-**Main Character:** Who the player is...
-**Educational Objectives:**
-- Learn about [topic]
-- Understand [concept]
-
-## Milestones
-- **Achievement**: When [event], set action to "milestone".
-
-## Additional Context
-Detailed background information...`}</pre>
-                  </Box>
-                </Box>
-
-                <Box>
-                  <Text fontWeight="bold" mb={2}>
-                    Tips for Success:
-                  </Text>
-                  <VStack spacing={1} align="stretch" pl={4}>
-                    <Text>• Start with an engaging hook</Text>
-                    <Text>• Include clear learning goals</Text>
-                    <Text>• Keep content age-appropriate</Text>
-                    <Text>• Add rich sensory details</Text>
-                    <Text>• Design for player choice and interaction</Text>
-                  </VStack>
-                </Box>
-              </VStack>
-            </Box>
-          </Collapse>
-        </Box>
-
-        {/* Main Form */}
-        <Box as="form" onSubmit={handleSubmit}>
-          <VStack spacing={6} align="stretch">
-            {/* Basic Information */}
-            <Box>
-              <Heading size="md" mb={4}>
-                📝 Basic Information
-              </Heading>
-              <VStack spacing={4} align="stretch">
-                {/* Title */}
-                <FormControl isRequired isInvalid={!!errors.title}>
-                  <FormLabel>Story Title</FormLabel>
-                  <Input
-                    value={form.title}
-                    onChange={e => setForm(prev => ({ ...prev, title: e.target.value }))}
-                    placeholder="Enter your story title..."
-                    onBlur={() => !form.slug && generateSlugFromTitle()}
-                  />
-                  {errors.title && (
-                    <Text color="red.500" fontSize="sm">
-                      {errors.title}
-                    </Text>
-                  )}
-                </FormControl>
-
-                {/* Slug */}
-                <FormControl isRequired isInvalid={!!errors.slug}>
-                  <FormLabel>
-                    URL Slug{' '}
-                    <Button size="xs" variant="ghost" onClick={generateSlugFromTitle}>
-                      Generate from title
-                    </Button>
-                  </FormLabel>
-                  <Input
-                    value={form.slug}
-                    onChange={e => setForm(prev => ({ ...prev, slug: e.target.value }))}
-                    placeholder="story-url-slug"
-                  />
-                  <Text fontSize="sm" color="gray.500">
-                    Only lowercase letters, numbers, and hyphens. This will be the URL: /your-slug
-                  </Text>
-                  {errors.slug && (
-                    <Text color="red.500" fontSize="sm">
-                      {errors.slug}
-                    </Text>
-                  )}
-                </FormControl>
-              </VStack>
-            </Box>
-
-            <Divider />
-
-            {/* Story Content */}
-            <Box>
-              <Heading size="md" mb={4}>
-                📚 Story Content
-              </Heading>
-              <FormControl isRequired isInvalid={!!errors.content}>
-                <FormLabel>Story Markdown Content</FormLabel>
+            <VStack spacing={3} align="stretch">
+              <FormControl>
+                <FormLabel>Instructions for Claude</FormLabel>
                 <Textarea
-                  value={form.content}
-                  onChange={e => setForm(prev => ({ ...prev, content: e.target.value }))}
-                  placeholder={`# Your Adventure Title
-
-## Setting
-Describe the world, time period, and environment where your story takes place...
-
-## Starting Scene
-You find yourself in [specific location]. Describe the opening scene with rich sensory details...
-
-## Story Context
-**Main Character:** Describe who the player is in this adventure.
-
-**Educational Objectives:**
-- Learn about [specific topic]
-- Understand [key concepts]
-- Experience [historical period/situation]
-
-**Tone and Style:**
-- Appropriate for [age group]
-- Focus on [learning goals]
-
-## Milestones
-- **First Achievement**: When [describe event], set action to "milestone".
-
-## Additional Context
-Provide detailed background information for authentic experiences...`}
-                  rows={20}
-                  fontFamily="mono"
-                  fontSize="sm"
+                  value={claudeInstructions}
+                  onChange={e => setClaudeInstructions(e.target.value)}
+                  placeholder="Example: Help me create a story about ancient Egypt that teaches kids about hieroglyphs and daily life in ancient times. Make it educational but fun for 8-year-olds..."
+                  rows={4}
+                  resize="vertical"
                 />
-                <Text fontSize="sm" color="gray.500">
-                  Include setting, starting scene, milestones, and any additional context. Use
-                  Markdown formatting for structure.
-                </Text>
-                {errors.content && (
-                  <Text color="red.500" fontSize="sm">
-                    {errors.content}
-                  </Text>
-                )}
               </FormControl>
 
-              {/* Content Preview */}
-              <Button
-                leftIcon={isPreviewOpen ? <FaChevronUp /> : <FaChevronDown />}
-                variant="ghost"
-                size="sm"
-                onClick={togglePreview}
-                mt={2}
-              >
-                {isPreviewOpen ? 'Hide' : 'Show'} Content Preview
-              </Button>
-              <Collapse in={isPreviewOpen}>
-                <Box
-                  p={4}
-                  border="1px"
-                  borderColor="gray.600"
-                  borderRadius="md"
-                  bg="gray.800"
-                  mt={2}
-                  maxH="400px"
-                  overflowY="auto"
+              <HStack>
+                <Button
+                  leftIcon={<FaRobot />}
+                  colorScheme="blue"
+                  onClick={handleClaudeRequest}
+                  isLoading={isClaudeLoading}
+                  loadingText="Sending to Claude..."
+                  disabled={!claudeInstructions.trim()}
                 >
-                  <pre style={{ whiteSpace: 'pre-wrap', fontSize: '14px' }}>{form.content}</pre>
-                </Box>
-              </Collapse>
-            </Box>
+                  Send to Claude
+                </Button>
+              </HStack>
 
-            <Divider />
-
-            {/* Homepage Translations */}
-            <Box>
-              <Heading size="md" mb={4}>
-                🌍 Homepage Translations
-              </Heading>
-              <Text fontSize="sm" color="gray.500" mb={4}>
-                Provide title and description for how your story appears on the homepage in
-                different languages. English is required - other languages are optional and will
-                automatically use English content if not provided.
-              </Text>
-
-              <VStack spacing={6} align="stretch">
-                {Object.entries(form.homepage_display).map(([langCode, translation]) => {
-                  const language = SUPPORTED_LANGUAGES.find(l => l.code === langCode)
-                  const isRequired = langCode === 'en'
-
-                  return (
-                    <Box key={langCode} p={4} border="1px" borderColor="gray.600" borderRadius="md">
-                      <HStack justify="space-between" mb={3}>
-                        <HStack>
-                          <Badge colorScheme={isRequired ? 'red' : 'blue'}>
-                            {language?.name || langCode}
-                          </Badge>
-                          {isRequired && (
-                            <Text fontSize="xs" color="red.500">
-                              (Required - Used as fallback for other languages)
+              {/* Claude Response Display */}
+              {claudeResponse && (
+                <Box>
+                  {claudeResponse.error ? (
+                    <Alert status="error">
+                      <AlertIcon />
+                      <Box>
+                        <AlertTitle>Claude Request Failed</AlertTitle>
+                        <AlertDescription>{claudeResponse.error}</AlertDescription>
+                      </Box>
+                    </Alert>
+                  ) : (
+                    <Box
+                      p={4}
+                      bg="gray.50"
+                      borderRadius="md"
+                      borderLeft="4px solid"
+                      borderColor="blue.400"
+                      _dark={{ bg: 'gray.700' }}
+                    >
+                      <VStack spacing={3} align="stretch">
+                        <HStack justify="space-between">
+                          <HStack>
+                            <FaRobot color="#4299E1" />
+                            <Text fontWeight="bold" color="blue.400">
+                              Claude&apos;s Response
                             </Text>
+                          </HStack>
+                          {claudeResponse.usage && (
+                            <Badge variant="outline" colorScheme="blue" fontSize="xs">
+                              {claudeResponse.usage.output_tokens} tokens
+                            </Badge>
                           )}
                         </HStack>
-                        {!isRequired && (
-                          <IconButton
-                            icon={<FaTrash />}
-                            size="sm"
-                            variant="ghost"
-                            colorScheme="red"
-                            onClick={() => removeLanguage(langCode)}
-                            aria-label={`Remove ${language?.name} translation`}
-                          />
+
+                        {claudeResponse.output && (
+                          <Box>
+                            <Text whiteSpace="pre-wrap" fontSize="sm">
+                              {claudeResponse.output}
+                            </Text>
+                          </Box>
                         )}
-                      </HStack>
 
-                      <VStack spacing={3} align="stretch">
-                        <FormControl
-                          isRequired={isRequired}
-                          isInvalid={!!errors[`homepage_${langCode}_title`]}
-                        >
-                          <FormLabel size="sm">Title</FormLabel>
-                          <Input
-                            value={translation.title}
-                            onChange={e => updateHomepageDisplay(langCode, 'title', e.target.value)}
-                            placeholder={`Story title in ${language?.name}...`}
-                          />
-                          {errors[`homepage_${langCode}_title`] && (
-                            <Text color="red.500" fontSize="sm">
-                              {errors[`homepage_${langCode}_title`]}
-                            </Text>
-                          )}
-                        </FormControl>
-
-                        <FormControl
-                          isRequired={isRequired}
-                          isInvalid={!!errors[`homepage_${langCode}_description`]}
-                        >
-                          <FormLabel size="sm">Description</FormLabel>
-                          <Textarea
-                            value={translation.description}
-                            onChange={e =>
-                              updateHomepageDisplay(langCode, 'description', e.target.value)
-                            }
-                            placeholder={`Brief description in ${language?.name}...`}
-                            rows={2}
-                          />
-                          {errors[`homepage_${langCode}_description`] && (
-                            <Text color="red.500" fontSize="sm">
-                              {errors[`homepage_${langCode}_description`]}
-                            </Text>
-                          )}
-                        </FormControl>
+                        {/* Show blockchain transaction info if available */}
+                        {claudeResponse.txHash && (
+                          <Box
+                            pt={2}
+                            borderTop="1px solid"
+                            borderColor="gray.200"
+                            _dark={{ borderColor: 'gray.600' }}
+                          >
+                            <VStack spacing={1} align="stretch">
+                              <Text fontSize="xs" color="gray.500" fontWeight="medium">
+                                Blockchain Transaction:
+                              </Text>
+                              <HStack justify="space-between" fontSize="xs">
+                                <Text color="gray.600">Network:</Text>
+                                <Badge variant="subtle" colorScheme="green">
+                                  {claudeResponse.network || 'Unknown'}
+                                </Badge>
+                              </HStack>
+                              {claudeResponse.explorerLink && (
+                                <HStack justify="space-between" fontSize="xs">
+                                  <Text color="gray.600">Transaction:</Text>
+                                  <Button
+                                    as="a"
+                                    href={claudeResponse.explorerLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    size="xs"
+                                    variant="link"
+                                    colorScheme="blue"
+                                    fontFamily="mono"
+                                  >
+                                    {claudeResponse.txHash.slice(0, 10)}...
+                                  </Button>
+                                </HStack>
+                              )}
+                            </VStack>
+                          </Box>
+                        )}
                       </VStack>
                     </Box>
-                  )
-                })}
-
-                {/* Add Language */}
-                {availableLanguages.length > 0 && (
-                  <Box>
-                    <Text fontSize="sm" mb={2}>
-                      Add custom translations for additional languages (optional - will use English
-                      if not provided):
-                    </Text>
-                    <HStack wrap="wrap" spacing={2}>
-                      {availableLanguages.map(language => (
-                        <Button
-                          key={language.code}
-                          size="sm"
-                          variant="outline"
-                          leftIcon={<FaPlus />}
-                          onClick={() => addLanguage(language.code)}
-                        >
-                          {language.name}
-                        </Button>
-                      ))}
-                    </HStack>
-                  </Box>
-                )}
-              </VStack>
-            </Box>
-
-            <Divider />
-
-            {/* Submit */}
-            <HStack spacing={4} justify="center" pt={4}>
-              <Button
-                type="submit"
-                colorScheme="blue"
-                size="lg"
-                leftIcon={<FaSave />}
-                isLoading={loading}
-                loadingText="Creating Story..."
-                isDisabled={Object.keys(errors).length > 0}
-              >
-                Create Story
-              </Button>
-              <Link href="/">
-                <Button variant="outline" size="lg" leftIcon={<FaEye />}>
-                  View Stories
-                </Button>
-              </Link>
-              <Button variant="ghost" size="lg" leftIcon={<FaBook />} onClick={toggleHelp}>
-                Guide
-              </Button>
-            </HStack>
+                  )}
+                </Box>
+              )}
+            </VStack>
           </VStack>
         </Box>
+
+        <Divider />
+
+        {/* Story Form */}
+        <VStack spacing={6} align="stretch">
+          <Heading as="h2" size="md">
+            Story Details
+          </Heading>
+
+          {/* Basic Information */}
+          <VStack spacing={4} align="stretch">
+            <FormControl isRequired>
+              <FormLabel>Story Title</FormLabel>
+              <Input
+                value={formData.title}
+                onChange={e => handleInputChange('title', e.target.value)}
+                placeholder="Enter your story title"
+              />
+            </FormControl>
+
+            <FormControl>
+              <FormLabel>
+                Story Slug{' '}
+                <Text as="span" fontSize="sm" color="gray.500">
+                  (auto-generated)
+                </Text>
+              </FormLabel>
+              <Input
+                value={formData.slug}
+                onChange={e => handleInputChange('slug', e.target.value)}
+                placeholder="story-slug"
+                isReadOnly
+                bg="gray.50"
+                _dark={{ bg: 'gray.700' }}
+              />
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                URL will be: /{formData.slug}
+              </Text>
+            </FormControl>
+
+            <FormControl isRequired>
+              <FormLabel>Story Content (Markdown)</FormLabel>
+              <Textarea
+                value={formData.content}
+                onChange={e => handleInputChange('content', e.target.value)}
+                placeholder="Write your story content in markdown format..."
+                rows={15}
+                resize="vertical"
+                fontFamily="mono"
+              />
+              <Text fontSize="xs" color="gray.500" mt={1}>
+                Include story setup, characters, milestones, and educational objectives.
+              </Text>
+            </FormControl>
+          </VStack>
+
+          {/* Homepage Display Languages */}
+          <Box>
+            <FormControl>
+              <FormLabel>
+                <HStack justify="space-between" w="100%">
+                  <HStack>
+                    <FaLanguage />
+                    <Text>Homepage Display (Multilingual)</Text>
+                    <Badge colorScheme="blue" variant="subtle">
+                      {Object.keys(formData.homepage_display).length} languages
+                    </Badge>
+                  </HStack>
+                  <IconButton
+                    aria-label="Toggle languages"
+                    icon={isLanguagesOpen ? <FaChevronUp /> : <FaChevronDown />}
+                    size="sm"
+                    variant="ghost"
+                    onClick={onLanguagesToggle}
+                  />
+                </HStack>
+              </FormLabel>
+
+              <Collapse in={isLanguagesOpen}>
+                <VStack spacing={4} mt={4}>
+                  {/* Current Languages */}
+                  {Object.entries(formData.homepage_display).map(([langCode, content]) => {
+                    const langInfo = supportedLanguages.find(l => l.code === langCode)
+                    const isRequired = langCode === 'en'
+
+                    return (
+                      <Box
+                        key={langCode}
+                        p={4}
+                        borderWidth="1px"
+                        borderRadius="md"
+                        w="100%"
+                        bg={isRequired ? 'blue.50' : 'gray.50'}
+                        _dark={{
+                          bg: isRequired ? 'blue.900' : 'gray.700',
+                        }}
+                      >
+                        <VStack spacing={3} align="stretch">
+                          <HStack justify="space-between">
+                            <HStack>
+                              <Text fontWeight="bold">
+                                {langInfo?.name || langCode.toUpperCase()}
+                              </Text>
+                              {isRequired && (
+                                <Badge colorScheme="blue" size="sm">
+                                  Required
+                                </Badge>
+                              )}
+                            </HStack>
+                            {!isRequired && (
+                              <IconButton
+                                aria-label="Remove language"
+                                icon={<FaTrash />}
+                                size="xs"
+                                colorScheme="red"
+                                variant="ghost"
+                                onClick={() => removeLanguage(langCode)}
+                              />
+                            )}
+                          </HStack>
+
+                          <FormControl isRequired={isRequired}>
+                            <FormLabel size="sm">Title</FormLabel>
+                            <Input
+                              value={content.title}
+                              onChange={e =>
+                                handleHomepageDisplayChange(langCode, 'title', e.target.value)
+                              }
+                              placeholder={`Story title in ${langInfo?.name || langCode}`}
+                              size="sm"
+                            />
+                          </FormControl>
+
+                          <FormControl isRequired={isRequired}>
+                            <FormLabel size="sm">Description</FormLabel>
+                            <Textarea
+                              value={content.description}
+                              onChange={e =>
+                                handleHomepageDisplayChange(langCode, 'description', e.target.value)
+                              }
+                              placeholder={`Brief description in ${langInfo?.name || langCode}`}
+                              rows={2}
+                              size="sm"
+                              resize="vertical"
+                            />
+                          </FormControl>
+                        </VStack>
+                      </Box>
+                    )
+                  })}
+
+                  {/* Add Language Options */}
+                  <Box>
+                    <Text fontSize="sm" fontWeight="medium" mb={2}>
+                      Add More Languages:
+                    </Text>
+                    <HStack wrap="wrap" spacing={2}>
+                      {supportedLanguages
+                        .filter(lang => !formData.homepage_display[lang.code])
+                        .map(lang => (
+                          <Button
+                            key={lang.code}
+                            leftIcon={<FaPlus />}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => addLanguage(lang.code)}
+                          >
+                            {lang.name}
+                          </Button>
+                        ))}
+                    </HStack>
+                  </Box>
+                </VStack>
+              </Collapse>
+            </FormControl>
+          </Box>
+
+          {/* Submit Section */}
+          <VStack spacing={4}>
+            <Button
+              leftIcon={<FaSave />}
+              colorScheme="green"
+              size="lg"
+              onClick={handleSubmit}
+              isLoading={isSubmitting}
+              loadingText="Saving Story..."
+              disabled={
+                !formData.title ||
+                !formData.content ||
+                !formData.homepage_display.en?.title ||
+                !formData.homepage_display.en?.description
+              }
+            >
+              Create Story
+            </Button>
+
+            {submitResult && (
+              <Alert status={submitResult.success ? 'success' : 'error'}>
+                <AlertIcon />
+                <Box>
+                  <AlertTitle>
+                    {submitResult.success ? 'Story Created!' : 'Creation Failed'}
+                  </AlertTitle>
+                  <AlertDescription>{submitResult.message}</AlertDescription>
+                </Box>
+              </Alert>
+            )}
+
+            {submitResult?.success && (
+              <HStack spacing={4}>
+                <Link href="/">
+                  <Button leftIcon={<FaEye />} variant="outline">
+                    View All Stories
+                  </Button>
+                </Link>
+                <Link href={`/${formData.slug}`}>
+                  <Button leftIcon={<FaEye />} colorScheme="blue" variant="outline">
+                    Play This Story
+                  </Button>
+                </Link>
+              </HStack>
+            )}
+          </VStack>
+        </VStack>
       </VStack>
     </Container>
   )
 }
 
-export default StoryCreator
+export default CreateStoryPage
