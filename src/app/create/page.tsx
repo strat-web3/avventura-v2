@@ -198,7 +198,8 @@ const CreateStoryPage: React.FC = () => {
       formData.append('data', '')
       formData.append('file', '')
 
-      const response = await fetch('https://rukh.w3hc.org/ask', {
+      // Use the proxy endpoint instead of the external URL
+      const response = await fetch('/api/proxy/claude/ask', {
         method: 'POST',
         body: formData,
       })
