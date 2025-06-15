@@ -405,19 +405,23 @@ Generate a complete story specification now:`
       formData.append('walletAddress', '')
       formData.append('context', 'avventura')
       formData.append('data', '')
-      formData.append('file', '')
 
-      // Use the proxy endpoint (works in both local and Netlify)
-      const response = await fetch('/api/proxy/claude/ask', {
+      console.log('🚀 Sending request to new Rukh API route...')
+
+      // Use the new internal API route
+      const response = await fetch('/api/rukh/ask', {
         method: 'POST',
         body: formData,
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `HTTP ${response.status}: ${response.statusText}`)
       }
 
       const data = await response.json()
+      console.log('📥 Rukh API response received:', data)
+
       setClaudeResponse(data)
 
       // Try to parse the JSON from Claude's response and auto-fill the form
@@ -425,7 +429,16 @@ Generate a complete story specification now:`
         try {
           // Clean the response (remove markdown code blocks if present)
           const cleanResponse = data.output.replace(/```json\s*|\s*```/g, '').trim()
+          console.log('🧹 Cleaned response for parsing:', cleanResponse.substring(0, 200) + '...')
+
           const storyData = JSON.parse(cleanResponse)
+          console.log('📋 Parsed story data:', {
+            hasSlug: !!storyData.slug,
+            hasTitle: !!storyData.title,
+            hasContent: !!storyData.content,
+            contentLength: storyData.content?.length,
+            homepageLanguages: Object.keys(storyData.homepage_display || {}),
+          })
 
           // Validate the response has required fields
           if (storyData.slug && storyData.title && storyData.content) {
@@ -434,7 +447,14 @@ Generate a complete story specification now:`
               title: storyData.title,
               content: storyData.content,
               homepage_display: storyData.homepage_display || {
-                en: { title: storyData.title, description: 'Adventure awaits!' },
+                en: {
+                  title: storyData.title,
+                  description: 'Adventure awaits!',
+                },
+                fr: {
+                  title: storyData.title,
+                  description: "L'aventure vous attend!",
+                },
               },
             })
 
@@ -451,6 +471,12 @@ Generate a complete story specification now:`
               isClosable: true,
             })
           } else {
+            console.warn('⚠️ Story data missing required fields:', {
+              hasSlug: !!storyData.slug,
+              hasTitle: !!storyData.title,
+              hasContent: !!storyData.content,
+            })
+
             toast({
               title: 'Story Generated',
               description:
@@ -461,7 +487,9 @@ Generate a complete story specification now:`
             })
           }
         } catch (parseError) {
-          console.log('Could not parse Claude response for auto-fill:', parseError)
+          console.error('❌ Could not parse Claude response for auto-fill:', parseError)
+          console.log('📄 Raw response:', data.output)
+
           toast({
             title: 'Story Generated',
             description:
@@ -471,15 +499,24 @@ Generate a complete story specification now:`
             isClosable: true,
           })
         }
+      } else {
+        console.warn('⚠️ No output in Claude response:', data)
+        toast({
+          title: 'No Response',
+          description: 'Claude did not return any content. Please try again.',
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        })
       }
     } catch (error) {
-      console.error('Claude request failed:', error)
+      console.error('💥 Claude request failed:', error)
 
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       setClaudeResponse({ error: errorMessage })
 
       toast({
-        title: 'Claude Request Failed',
+        title: 'Story Generation Failed',
         description: errorMessage,
         status: 'error',
         duration: 5000,
