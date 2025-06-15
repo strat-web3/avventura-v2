@@ -1,3 +1,4 @@
+// nextjs.config.ts - Remove proxy rewrites
 import type { NextConfig } from 'next'
 import type { Configuration as WebpackConfig } from 'webpack'
 
@@ -46,16 +47,6 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     optimizePackageImports: ['@reown/appkit', '@walletconnect/universal-provider'],
-  },
-
-  // Add proxy rewrites for development and production
-  async rewrites() {
-    return [
-      {
-        source: '/api/proxy/claude/:path*',
-        destination: 'https://rukh.w3hc.org/:path*',
-      },
-    ]
   },
 }
 
