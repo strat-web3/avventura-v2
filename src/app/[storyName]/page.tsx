@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext'
 import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
 import { SessionManager } from '@/app/utils/sessionStorage'
+import Loader from '@/components/Loader'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -603,9 +604,7 @@ export default function StoryPage() {
   if (state.isLoading && !state.currentStep) {
     return (
       <StoryContainer>
-        <LoadingBox>
-          <LoadingSpinner />
-        </LoadingBox>
+        <Loader />
       </StoryContainer>
     )
   }
@@ -613,9 +612,7 @@ export default function StoryPage() {
   if (!state.currentStep) {
     return (
       <StoryContainer>
-        <LoadingBox>
-          <LoadingSpinner />
-        </LoadingBox>
+        <Loader />
       </StoryContainer>
     )
   }
@@ -645,11 +642,7 @@ export default function StoryPage() {
           </OptionsGrid>
         )}
 
-        {state.isLoading && !state.currentStep && (
-          <LoadingBox>
-            <LoadingSpinner />
-          </LoadingBox>
-        )}
+        {state.isLoading && !state.currentStep && <Loader />}
       </StoryContainer>
     </>
   )

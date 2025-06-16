@@ -7,7 +7,7 @@ import { SessionManager } from '@/app/utils/sessionStorage'
 import { useLanguage } from '@/context/LanguageContext'
 import { useTranslation } from '@/hooks/useTranslation'
 import { useState, useEffect } from 'react'
-import Image from 'next/image'
+import Loader from './Loader'
 
 interface StoryDisplayData {
   slug: string
@@ -238,44 +238,12 @@ const StoriesGrid: React.FC = () => {
   }
 
   if (loading) {
-    return (
-      <VStack spacing={8} align="center" py={20}>
-        <Box>
-          <Image
-            src="/loader.svg"
-            alt="Loading..."
-            width={200}
-            height={200}
-            style={{
-              animation: 'spin 2s linear infinite',
-            }}
-          />
-          <style jsx>{`
-            @keyframes spin {
-              from {
-                transform: rotate(0deg);
-              }
-              to {
-                transform: rotate(360deg);
-              }
-            }
-          `}</style>
-        </Box>
-      </VStack>
-    )
+    return <Loader />
   }
 
   if (error) {
     return (
       <VStack spacing={8} align="stretch">
-        {/* <Alert status="error">
-          <AlertIcon />
-          <Box>
-            <Text fontWeight="bold">Error loading stories</Text>
-            <Text fontSize="sm">{error}</Text>
-          </Box>
-        </Alert> */}
-
         {stories.length > 0 && (
           <>
             <VStack spacing={4} align="stretch">
