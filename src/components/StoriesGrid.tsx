@@ -31,6 +31,7 @@ const StoryBox: React.FC<StoryBoxProps> = ({ story, onClick, buttonText }) => {
       p={6}
       borderWidth="1px"
       borderRadius="lg"
+      mb={4}
       borderColor={borderColor}
       bg={bgColor}
       cursor="pointer"
