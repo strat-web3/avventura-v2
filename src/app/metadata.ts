@@ -10,7 +10,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'Avventura',
     description: 'Join the adventure if you dare!',
-    url: 'https://avventura-v2.netlify.app',
+    url: 'https://v2.avventura.fun.app',
     siteName: 'Avventura',
     images: [
       {
