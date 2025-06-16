@@ -78,8 +78,7 @@ const OptionContainer = styled(Box)<{ disabled: boolean }>`
   pointer-events: ${props => (props.disabled ? 'none' : 'auto')};
 `
 
-const StoryContainer = styled(Container)`
-  max-width: 600px;
+const StoryContainer = styled.div`
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -88,6 +87,11 @@ const StoryContainer = styled(Container)`
   padding: 20px;
   padding-top: 50px;
   position: relative;
+
+  @media (min-width: 768px) {
+    padding-left: 5%; /* Adjust this percentage */
+    padding-right: 5%; /* Adjust this percentage */
+  }
 `
 
 const TypingText = styled(Text)`
