@@ -468,7 +468,7 @@ Generate a complete story specification now:`
               description:
                 'Claude has generated your story and pre-filled the form. Review and save when ready.',
               status: 'success',
-              duration: 5000,
+              duration: 1000,
               isClosable: true,
             })
           } else {
