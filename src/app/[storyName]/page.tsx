@@ -6,6 +6,7 @@ import { useLanguage } from '@/context/LanguageContext'
 import { useParams } from 'next/navigation'
 import styled from '@emotion/styled'
 import { SessionManager } from '@/app/utils/sessionStorage'
+import Loader from '@/components/Loader'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -78,8 +79,7 @@ const OptionContainer = styled(Box)<{ disabled: boolean }>`
   pointer-events: ${props => (props.disabled ? 'none' : 'auto')};
 `
 
-const StoryContainer = styled(Container)`
-  max-width: 600px;
+const StoryContainer = styled.div`
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -88,6 +88,11 @@ const StoryContainer = styled(Container)`
   padding: 20px;
   padding-top: 50px;
   position: relative;
+
+  @media (min-width: 768px) {
+    padding-left: 5%; /* Adjust this percentage */
+    padding-right: 5%; /* Adjust this percentage */
+  }
 `
 
 const TypingText = styled(Text)`
@@ -255,15 +260,6 @@ const createHeart = () => {
   }, duration * 1000)
 }
 
-// Trigger milestone celebration
-const triggerMilestoneCelebration = () => {
-  console.log('🎉 Starting milestone celebration!')
-
-  for (let i = 0; i < 150; i++) {
-    setTimeout(() => createHeart(), i * 20)
-  }
-}
-
 // Typing effect component
 const TypingEffect: React.FC<{
   text: string
@@ -331,6 +327,52 @@ export default function StoryPage() {
 
   const languageName = getLanguageName(language)
   const storyName = Array.isArray(params?.storyName) ? params.storyName[0] : params?.storyName || ''
+
+  // Trigger milestone celebration - MOVED INSIDE COMPONENT TO ACCESS TOAST
+  const triggerMilestoneCelebration = () => {
+    console.log('🎉 Starting milestone celebration!')
+
+    // for (let i = 0; i < 150; i++) {
+    //   setTimeout(() => createHeart(), i * 20)
+    // }
+
+    // toast({
+    //   title: '+1',
+    //   description: '',
+    //   status: 'success',
+    //   duration: 3000,
+    //   isClosable: true,
+    //   size: 'sm',
+    //   variant: 'solid',
+    //   containerStyle: {
+    //     width: '50px',
+    //     textAlign: 'center',
+    //   },
+    // })
+
+    toast({
+      duration: 3000,
+      isClosable: true,
+      position: 'bottom',
+      render: () => (
+        <Box
+          color="white"
+          p={3}
+          borderRadius="lg"
+          textAlign="center"
+          sx={{
+            animation: 'blink 0.1s infinite alternate',
+            '@keyframes blink': {
+              '0%': { backgroundColor: '#45a2f8' },
+              '100%': { backgroundColor: '#8c1c84' },
+            },
+          }}
+        >
+          +1
+        </Box>
+      ),
+    })
+  }
 
   // Initialize story session
   useEffect(() => {
@@ -599,9 +641,7 @@ export default function StoryPage() {
   if (state.isLoading && !state.currentStep) {
     return (
       <StoryContainer>
-        <LoadingBox>
-          <LoadingSpinner />
-        </LoadingBox>
+        <Loader />
       </StoryContainer>
     )
   }
@@ -609,9 +649,7 @@ export default function StoryPage() {
   if (!state.currentStep) {
     return (
       <StoryContainer>
-        <LoadingBox>
-          <LoadingSpinner />
-        </LoadingBox>
+        <Loader />
       </StoryContainer>
     )
   }
@@ -641,11 +679,7 @@ export default function StoryPage() {
           </OptionsGrid>
         )}
 
-        {state.isLoading && !state.currentStep && (
-          <LoadingBox>
-            <LoadingSpinner />
-          </LoadingBox>
-        )}
+        {state.isLoading && !state.currentStep && <Loader />}
       </StoryContainer>
     </>
   )

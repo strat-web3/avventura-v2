@@ -40,6 +40,7 @@ import {
 } from 'react-icons/fa'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
+import Loader from '@/components/Loader'
 
 // Language mapping for display
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -467,7 +468,7 @@ Generate a complete story specification now:`
               description:
                 'Claude has generated your story and pre-filled the form. Review and save when ready.',
               status: 'success',
-              duration: 5000,
+              duration: 1000,
               isClosable: true,
             })
           } else {
@@ -650,8 +651,7 @@ Generate a complete story specification now:`
                       <FormLabel size="sm">Select Story to Edit</FormLabel>
                       {isLoadingStories ? (
                         <HStack p={2}>
-                          <Spinner size="sm" />
-                          <Text fontSize="sm">Loading stories...</Text>
+                          <Loader />
                         </HStack>
                       ) : (
                         <Select
@@ -690,7 +690,7 @@ Generate a complete story specification now:`
                         }
                       }}
                       isLoading={isLoadingStory}
-                      loadingText="Loading..."
+                      loadingText=""
                       disabled={
                         !selectedStorySlug ||
                         !existingStories.some(story => story.slug === selectedStorySlug)
@@ -1094,10 +1094,7 @@ Generate a complete story specification now:`
 // Loading fallback component
 const CreateStoryFallback: React.FC = () => (
   <Container maxW="container.lg" py={10}>
-    <VStack spacing={8} align="center">
-      <Spinner size="xl" />
-      <Text>Loading story editor...</Text>
-    </VStack>
+    <Loader />
   </Container>
 )
 
