@@ -36,13 +36,14 @@ export interface HomepageDisplay {
   }
 }
 
-// Story interface with single entry and JSON homepage_display
+// Story interface with single entry, JSON homepage_display, and owner
 export interface Story {
   id: number
   slug: string
   title: string
   content: string
   homepage_display: HomepageDisplay
+  owner?: string // Ethereum address
   created_at: Date
   updated_at: Date
   is_active: boolean
@@ -127,7 +128,7 @@ export class StoryService {
       const result = await pool.query(query, [slug])
 
       if (result.rows.length > 0) {
-        console.log(`✅ Found story '${slug}'`)
+        console.log(`✅ Found story '${slug}' owned by: ${result.rows[0].owner || 'unknown'}`)
         return result.rows[0] as Story
       }
 
@@ -154,6 +155,47 @@ export class StoryService {
     } catch (error) {
       console.error('Error fetching all stories:', error)
       throw new Error('Failed to fetch stories')
+    }
+  }
+
+  /**
+   * Get stories owned by a specific address
+   */
+  static async getStoriesByOwner(ownerAddress: string): Promise<Story[]> {
+    const pool = getPool()
+
+    try {
+      const query =
+        'SELECT * FROM stories WHERE owner = $1 AND is_active = true ORDER BY created_at DESC'
+      const result = await pool.query(query, [ownerAddress])
+
+      console.log(`✅ Found ${result.rows.length} stories for owner: ${ownerAddress}`)
+      return result.rows as Story[]
+    } catch (error) {
+      console.error('Error fetching stories by owner:', error)
+      throw new Error(`Failed to fetch stories for owner: ${ownerAddress}`)
+    }
+  }
+
+  /**
+   * Check if user owns a specific story
+   */
+  static async isStoryOwner(slug: string, ownerAddress: string): Promise<boolean> {
+    const pool = getPool()
+
+    try {
+      const query = 'SELECT owner FROM stories WHERE slug = $1 AND is_active = true'
+      const result = await pool.query(query, [slug])
+
+      if (result.rows.length === 0) {
+        return false
+      }
+
+      const storyOwner = result.rows[0].owner
+      return storyOwner === ownerAddress
+    } catch (error) {
+      console.error('Error checking story ownership:', error)
+      return false
     }
   }
 
@@ -214,28 +256,36 @@ export class StoryService {
   }
 
   /**
-   * Create or update a story
+   * Create or update a story with owner
    * Automatically fills missing language translations with English content
    */
   static async upsertStory(
-    storyData: Omit<Story, 'id' | 'created_at' | 'updated_at'>
+    storyData: Omit<Story, 'id' | 'created_at' | 'updated_at'>,
+    ownerAddress?: string
   ): Promise<Story> {
     const pool = getPool()
 
     try {
-      console.log(`📝 Upserting story: ${storyData.slug}`)
+      console.log(`📝 Upserting story: ${storyData.slug} for owner: ${ownerAddress}`)
+
+      // Check if story exists and verify ownership for updates
+      const existingStory = await this.getStory(storyData.slug)
+      if (existingStory && existingStory.owner && existingStory.owner !== ownerAddress) {
+        throw new Error('You can only edit stories that you own.')
+      }
 
       // Enhance homepage_display with English fallbacks for missing languages
       const enhancedHomepageDisplay = fillLanguageFallbacks(storyData.homepage_display)
 
       const query = `
-        INSERT INTO stories (slug, title, content, homepage_display, is_active)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO stories (slug, title, content, homepage_display, owner, is_active)
+        VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT (slug) 
         DO UPDATE SET 
           title = EXCLUDED.title,
           content = EXCLUDED.content,
           homepage_display = EXCLUDED.homepage_display,
+          owner = EXCLUDED.owner,
           is_active = EXCLUDED.is_active,
           updated_at = NOW()
         RETURNING *
@@ -245,12 +295,13 @@ export class StoryService {
         storyData.slug,
         storyData.title,
         storyData.content,
-        JSON.stringify(enhancedHomepageDisplay), // Use enhanced version with fallbacks
+        JSON.stringify(enhancedHomepageDisplay),
+        ownerAddress || null,
         storyData.is_active,
       ])
 
       console.log(
-        `✅ Upserted story: ${storyData.slug} with ${Object.keys(enhancedHomepageDisplay).length} languages`
+        `✅ Upserted story: ${storyData.slug} with ${Object.keys(enhancedHomepageDisplay).length} languages for owner: ${ownerAddress}`
       )
       return result.rows[0] as Story
     } catch (error) {
@@ -262,15 +313,25 @@ export class StoryService {
   /**
    * Update only the homepage display data for a story
    * Automatically fills missing language translations with English content
+   * Includes ownership check
    */
   static async updateHomepageDisplay(
     slug: string,
-    homepageDisplay: HomepageDisplay
+    homepageDisplay: HomepageDisplay,
+    ownerAddress?: string
   ): Promise<boolean> {
     const pool = getPool()
 
     try {
-      console.log(`📝 Updating homepage display for: ${slug}`)
+      console.log(`📝 Updating homepage display for: ${slug} by owner: ${ownerAddress}`)
+
+      // Check ownership if owner address is provided
+      if (ownerAddress) {
+        const isOwner = await this.isStoryOwner(slug, ownerAddress)
+        if (!isOwner) {
+          throw new Error('You can only update stories that you own.')
+        }
+      }
 
       // Enhance homepage_display with English fallbacks for missing languages
       const enhancedHomepageDisplay = fillLanguageFallbacks(homepageDisplay)
@@ -301,11 +362,22 @@ export class StoryService {
 
   /**
    * Delete a story (soft delete by setting is_active = false)
+   * Includes ownership check
    */
-  static async deleteStory(slug: string): Promise<boolean> {
+  static async deleteStory(slug: string, ownerAddress?: string): Promise<boolean> {
     const pool = getPool()
 
     try {
+      console.log(`🗑️ Deleting story: ${slug} by owner: ${ownerAddress}`)
+
+      // Check ownership if owner address is provided
+      if (ownerAddress) {
+        const isOwner = await this.isStoryOwner(slug, ownerAddress)
+        if (!isOwner) {
+          throw new Error('You can only delete stories that you own.')
+        }
+      }
+
       const query = 'UPDATE stories SET is_active = false, updated_at = NOW() WHERE slug = $1'
       const result = await pool.query(query, [slug])
 
@@ -331,6 +403,8 @@ export class StoryService {
     oldestStory: string | null
     newestStory: string | null
     languagesSupported: number
+    storiesWithOwners: number
+    uniqueOwners: number
   }> {
     const pool = getPool()
 
@@ -340,6 +414,18 @@ export class StoryService {
         'SELECT COUNT(*) as count FROM stories WHERE is_active = true'
       )
       const totalStories = parseInt(totalResult.rows[0].count)
+
+      // Stories with owners
+      const ownedResult = await pool.query(
+        'SELECT COUNT(*) as count FROM stories WHERE is_active = true AND owner IS NOT NULL'
+      )
+      const storiesWithOwners = parseInt(ownedResult.rows[0].count)
+
+      // Unique owners
+      const uniqueOwnersResult = await pool.query(
+        'SELECT COUNT(DISTINCT owner) as count FROM stories WHERE is_active = true AND owner IS NOT NULL'
+      )
+      const uniqueOwners = parseInt(uniqueOwnersResult.rows[0].count)
 
       // Oldest and newest stories
       const oldestResult = await pool.query(
@@ -354,6 +440,8 @@ export class StoryService {
         oldestStory: oldestResult.rows[0]?.slug || null,
         newestStory: newestResult.rows[0]?.slug || null,
         languagesSupported: SUPPORTED_LANGUAGES.length,
+        storiesWithOwners,
+        uniqueOwners,
       }
     } catch (error) {
       console.error('Error fetching story stats:', error)
@@ -363,20 +451,31 @@ export class StoryService {
 
   /**
    * Search stories by title or content
+   * Optionally filter by owner
    */
-  static async searchStories(searchTerm: string): Promise<Story[]> {
+  static async searchStories(searchTerm: string, ownerAddress?: string): Promise<Story[]> {
     const pool = getPool()
 
     try {
-      const query = `
+      let query = `
         SELECT * FROM stories 
         WHERE is_active = true 
         AND (title ILIKE $1 OR content ILIKE $1 OR homepage_display::text ILIKE $1)
-        ORDER BY created_at DESC
       `
-      const result = await pool.query(query, [`%${searchTerm}%`])
+      const params = [`%${searchTerm}%`]
 
-      console.log(`✅ Found ${result.rows.length} stories matching "${searchTerm}"`)
+      if (ownerAddress) {
+        query += ' AND owner = $2'
+        params.push(ownerAddress)
+      }
+
+      query += ' ORDER BY created_at DESC'
+
+      const result = await pool.query(query, params)
+
+      console.log(
+        `✅ Found ${result.rows.length} stories matching "${searchTerm}"${ownerAddress ? ` for owner ${ownerAddress}` : ''}`
+      )
       return result.rows as Story[]
     } catch (error) {
       console.error('Error searching stories:', error)
@@ -402,6 +501,56 @@ export class StoryService {
     } catch (error) {
       console.error('Error fetching available languages:', error)
       throw new Error('Failed to fetch available languages')
+    }
+  }
+
+  /**
+   * Get ownership statistics
+   */
+  static async getOwnershipStats(ownerAddress: string): Promise<{
+    totalStories: number
+    latestStory: string | null
+    oldestStory: string | null
+    totalLanguages: number
+  }> {
+    const pool = getPool()
+
+    try {
+      // Total stories by owner
+      const totalResult = await pool.query(
+        'SELECT COUNT(*) as count FROM stories WHERE owner = $1 AND is_active = true',
+        [ownerAddress]
+      )
+      const totalStories = parseInt(totalResult.rows[0].count)
+
+      // Latest and oldest stories by owner
+      const latestResult = await pool.query(
+        'SELECT slug FROM stories WHERE owner = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1',
+        [ownerAddress]
+      )
+      const oldestResult = await pool.query(
+        'SELECT slug FROM stories WHERE owner = $1 AND is_active = true ORDER BY created_at ASC LIMIT 1',
+        [ownerAddress]
+      )
+
+      // Count unique languages across all stories by owner
+      const languagesResult = await pool.query(
+        `SELECT DISTINCT jsonb_object_keys(homepage_display) as language 
+         FROM stories 
+         WHERE owner = $1 AND is_active = true`,
+        [ownerAddress]
+      )
+      const totalLanguages = languagesResult.rows.length
+
+      return {
+        totalStories,
+        latestStory: latestResult.rows[0]?.slug || null,
+        oldestStory: oldestResult.rows[0]?.slug || null,
+        totalLanguages,
+      }
+    } catch (error) {
+      console.error('Error fetching ownership stats:', error)
+      throw new Error(`Failed to fetch ownership stats for: ${ownerAddress}`)
     }
   }
 
