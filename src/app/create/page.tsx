@@ -25,6 +25,7 @@ import {
   Badge,
   Select,
   Spinner,
+  Center,
 } from '@chakra-ui/react'
 import {
   FaPlus,
@@ -37,11 +38,15 @@ import {
   FaLanguage,
   FaSearch,
   FaUpload,
+  FaWallet,
+  FaLock,
 } from 'react-icons/fa'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { useAppKitAccount } from '@reown/appkit/react'
 import Link from 'next/link'
 import Loader from '@/components/Loader'
 import Header from '@/components/Header'
+import Connect from '@/components/Connect'
 
 // Language mapping for display
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -75,11 +80,64 @@ interface ExistingStory {
   title: string
   content: string
   homepage_display: Record<string, LanguageEntry>
+  owner?: string
   created_at: string
   updated_at: string
 }
 
+// Authentication Guard Component
+const AuthenticationGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isConnected, address } = useAppKitAccount()
+
+  if (!isConnected) {
+    return (
+      <Container maxW="container.lg" py={10} mt={69}>
+        <VStack spacing={8} align="center" py={20}>
+          <Box textAlign="center">
+            <FaLock size={60} style={{ margin: '0 auto 20px', opacity: 0.3 }} />
+            <Heading size="xl" mb={4} color="gray.500">
+              Authentication Required
+            </Heading>
+            <Text color="gray.400" fontSize="lg" mb={8} maxW="md">
+              You need to connect your wallet to create or edit stories. This ensures you own and
+              control your content.
+            </Text>
+          </Box>
+
+          <VStack spacing={4}>
+            <Connect />
+            <Text fontSize="sm" color="gray.500" textAlign="center" maxW="sm">
+              Your wallet address will be recorded as the owner of any stories you create. Only you
+              will be able to edit them.
+            </Text>
+          </VStack>
+
+          <Box mt={8} p={6} bg="gray.50" _dark={{ bg: 'gray.700' }} borderRadius="lg" maxW="md">
+            <VStack spacing={3} align="start">
+              <Text fontSize="sm" fontWeight="bold" color="blue.400">
+                Why do I need to connect?
+              </Text>
+              <Text fontSize="sm" color="gray.600" _dark={{ color: 'gray.300' }}>
+                • <strong>Ownership:</strong> Your wallet proves you own your stories
+              </Text>
+              <Text fontSize="sm" color="gray.600" _dark={{ color: 'gray.300' }}>
+                • <strong>Security:</strong> Only you can edit your content
+              </Text>
+              <Text fontSize="sm" color="gray.600" _dark={{ color: 'gray.300' }}>
+                • <strong>Future features:</strong> Monetization, NFTs, and more
+              </Text>
+            </VStack>
+          </Box>
+        </VStack>
+      </Container>
+    )
+  }
+
+  return <>{children}</>
+}
+
 const CreateStoryContent: React.FC = () => {
+  const { address, isConnected } = useAppKitAccount()
   const [formData, setFormData] = useState<StoryFormData>({
     slug: '',
     title: '',
@@ -112,13 +170,15 @@ const CreateStoryContent: React.FC = () => {
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Fetch existing stories function
-  const fetchExistingStories = React.useCallback(async () => {
-    console.log('📡 Starting fetchExistingStories...')
+  // Fetch user's stories function
+  const fetchUserStories = React.useCallback(async () => {
+    if (!address) return
+
+    console.log('📡 Starting fetchUserStories for address:', address)
     setIsLoadingStories(true)
     try {
-      console.log('🔗 Making request to /api/admin/stories')
-      const response = await fetch('/api/admin/stories')
+      console.log('🔗 Making request to /api/admin/stories?owner=', address)
+      const response = await fetch(`/api/admin/stories?owner=${address}`)
       console.log('📡 Response status:', response.status, response.statusText)
 
       const data = await response.json()
@@ -128,14 +188,19 @@ const CreateStoryContent: React.FC = () => {
         console.log('✅ Stories fetched successfully:', data.stories.length, 'stories')
         console.log(
           '📚 Story details:',
-          data.stories.map((s: ExistingStory) => ({ slug: s.slug, title: s.title, id: s.id }))
+          data.stories.map((s: ExistingStory) => ({
+            slug: s.slug,
+            title: s.title,
+            id: s.id,
+            owner: s.owner,
+          }))
         )
         setExistingStories(data.stories)
       } else {
         console.error('❌ API returned error:', data.error)
         toast({
-          title: 'Failed to load stories',
-          description: data.error || 'Could not fetch existing stories',
+          title: 'Failed to load your stories',
+          description: data.error || 'Could not fetch your stories',
           status: 'error',
           duration: 3000,
         })
@@ -150,22 +215,24 @@ const CreateStoryContent: React.FC = () => {
       })
     } finally {
       setIsLoadingStories(false)
-      console.log('🏁 fetchExistingStories completed')
+      console.log('🏁 fetchUserStories completed')
     }
-  }, [toast])
+  }, [address, toast])
 
-  // Load existing stories on component mount
+  // Load user's stories when address changes
   useEffect(() => {
-    console.log('🔄 Component mounted, fetching existing stories...')
-    fetchExistingStories()
-  }, [fetchExistingStories])
+    if (address) {
+      console.log('🔄 Address connected, fetching user stories...', address)
+      fetchUserStories()
+    }
+  }, [address, fetchUserStories])
 
-  // Load a specific story for editing
+  // Load a specific story for editing (with ownership check)
   const loadStoryForEditing = React.useCallback(
     async (slug: string) => {
       console.log('📖 Starting loadStoryForEditing for slug:', slug)
-      if (!slug) {
-        console.log('❌ No slug provided to loadStoryForEditing')
+      if (!slug || !address) {
+        console.log('❌ No slug or address provided to loadStoryForEditing')
         return
       }
 
@@ -180,9 +247,22 @@ const CreateStoryContent: React.FC = () => {
 
         if (data.success && data.story) {
           const story = data.story
+
+          // Check ownership
+          if (story.owner && story.owner !== address) {
+            toast({
+              title: 'Access Denied',
+              description: 'You can only edit stories that you own.',
+              status: 'error',
+              duration: 5000,
+            })
+            return
+          }
+
           console.log('✅ Story loaded successfully:', {
             slug: story.slug,
             title: story.title,
+            owner: story.owner,
             contentLength: story.content?.length,
             homepageDisplayKeys: Object.keys(story.homepage_display || {}),
           })
@@ -226,7 +306,7 @@ const CreateStoryContent: React.FC = () => {
         console.log('🏁 loadStoryForEditing completed for slug:', slug)
       }
     },
-    [toast]
+    [address, toast]
   )
 
   // Handle URL edit parameter after stories are loaded
@@ -247,13 +327,9 @@ const CreateStoryContent: React.FC = () => {
         loadStoryForEditing(editSlug)
       } else {
         console.log('❌ Story not found:', editSlug)
-        console.log(
-          '📝 Available story slugs:',
-          existingStories.map(s => s.slug)
-        )
         toast({
           title: 'Story Not Found',
-          description: `Story "${editSlug}" does not exist. Available stories: ${existingStories.map(s => s.slug).join(', ')}`,
+          description: `You don't have a story called "${editSlug}" or it doesn't exist.`,
           status: 'error',
           duration: 7000,
         })
@@ -263,38 +339,25 @@ const CreateStoryContent: React.FC = () => {
         window.history.replaceState({}, '', url.toString())
         console.log('🧹 Cleared invalid edit parameter from URL')
       }
-    } else if (editSlug && existingStories.length === 0) {
-      console.log('⏳ Edit slug found but stories not loaded yet:', editSlug)
     }
   }, [existingStories, searchParams, loadStoryForEditing, toast])
 
   // Handle story selection change
   const handleStorySelection = (slug: string) => {
     console.log('🎯 handleStorySelection called with slug:', slug)
-    console.log(
-      '📚 Current existingStories:',
-      existingStories.map(s => s.slug)
-    )
-
     setSelectedStorySlug(slug)
     if (slug && existingStories.some(story => story.slug === slug)) {
       console.log('✅ Valid story selected, loading:', slug)
       loadStoryForEditing(slug)
     } else if (slug) {
       console.log('❌ Invalid story selected:', slug)
-      console.log(
-        '📝 Available options:',
-        existingStories.map(s => s.slug)
-      )
       toast({
         title: 'Invalid Story',
-        description: `Story "${slug}" not found in the available stories.`,
+        description: `Story "${slug}" not found in your stories.`,
         status: 'warning',
         duration: 3000,
       })
       setSelectedStorySlug('')
-    } else {
-      console.log('🚫 Empty slug provided')
     }
   }
 
@@ -404,13 +467,12 @@ Generate a complete story specification now:`
       formData.append('message', storyGenerationPrompt)
       formData.append('model', 'anthropic')
       formData.append('sessionId', '')
-      formData.append('walletAddress', '')
+      formData.append('walletAddress', address || '')
       formData.append('context', 'avventura')
       formData.append('data', '')
 
-      console.log('🚀 Sending request to new Rukh API route...')
+      console.log('🚀 Sending request to Rukh API route...')
 
-      // Use the new internal API route
       const response = await fetch('/api/rukh/ask', {
         method: 'POST',
         body: formData,
@@ -429,20 +491,9 @@ Generate a complete story specification now:`
       // Try to parse the JSON from Claude's response and auto-fill the form
       if (data.output) {
         try {
-          // Clean the response (remove markdown code blocks if present)
           const cleanResponse = data.output.replace(/```json\s*|\s*```/g, '').trim()
-          console.log('🧹 Cleaned response for parsing:', cleanResponse.substring(0, 200) + '...')
-
           const storyData = JSON.parse(cleanResponse)
-          console.log('📋 Parsed story data:', {
-            hasSlug: !!storyData.slug,
-            hasTitle: !!storyData.title,
-            hasContent: !!storyData.content,
-            contentLength: storyData.content?.length,
-            homepageLanguages: Object.keys(storyData.homepage_display || {}),
-          })
 
-          // Validate the response has required fields
           if (storyData.slug && storyData.title && storyData.content) {
             setFormData({
               slug: storyData.slug,
@@ -460,7 +511,6 @@ Generate a complete story specification now:`
               },
             })
 
-            // Switch to create mode if we were editing
             setEditMode(false)
             setSelectedStorySlug('')
 
@@ -473,12 +523,6 @@ Generate a complete story specification now:`
               isClosable: true,
             })
           } else {
-            console.warn('⚠️ Story data missing required fields:', {
-              hasSlug: !!storyData.slug,
-              hasTitle: !!storyData.title,
-              hasContent: !!storyData.content,
-            })
-
             toast({
               title: 'Story Generated',
               description:
@@ -490,8 +534,6 @@ Generate a complete story specification now:`
           }
         } catch (parseError) {
           console.error('❌ Could not parse Claude response for auto-fill:', parseError)
-          console.log('📄 Raw response:', data.output)
-
           toast({
             title: 'Story Generated',
             description:
@@ -501,19 +543,9 @@ Generate a complete story specification now:`
             isClosable: true,
           })
         }
-      } else {
-        console.warn('⚠️ No output in Claude response:', data)
-        toast({
-          title: 'No Response',
-          description: 'Claude did not return any content. Please try again.',
-          status: 'warning',
-          duration: 5000,
-          isClosable: true,
-        })
       }
     } catch (error) {
       console.error('💥 Claude request failed:', error)
-
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       setClaudeResponse({ error: errorMessage })
 
@@ -531,6 +563,16 @@ Generate a complete story specification now:`
 
   // Submit form to save story
   const handleSubmit = async () => {
+    if (!address) {
+      toast({
+        title: 'Authentication Required',
+        description: 'Please connect your wallet to save the story.',
+        status: 'error',
+        duration: 5000,
+      })
+      return
+    }
+
     setIsSubmitting(true)
     setSubmitStatus({ type: null, message: '' })
 
@@ -545,12 +587,17 @@ Generate a complete story specification now:`
     }
 
     try {
+      const payload = {
+        ...formData,
+        owner: address,
+      }
+
       const response = await fetch('/api/admin/stories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       })
 
       const result = await response.json()
@@ -569,14 +616,14 @@ Generate a complete story specification now:`
           duration: 5000,
         })
 
-        // Refresh the stories list if we were editing
+        // Refresh the user's stories list if we were editing
         if (editMode) {
-          await fetchExistingStories()
+          await fetchUserStories()
         }
 
-        // Redirect to homepage after a delay
+        // Redirect to the story that was just created/updated after a delay
         setTimeout(() => {
-          router.push('/')
+          router.push(`/${result.story.slug}`)
         }, 2000)
       } else {
         setSubmitStatus({
@@ -610,6 +657,26 @@ Generate a complete story specification now:`
                 ? 'Modify your existing story or create a new one'
                 : 'Generate stories manually or with the help of our faithful assistant'}
             </Text>
+
+            {/* Connected Address Display */}
+            {address && (
+              <Box
+                mt={4}
+                p={3}
+                bg="blue.50"
+                _dark={{ bg: 'blue.900' }}
+                borderRadius="md"
+                maxW="md"
+                mx="auto"
+              >
+                <HStack justify="center" spacing={2}>
+                  <FaWallet color="#4299E1" />
+                  <Text fontSize="sm" color="blue.600" _dark={{ color: 'blue.300' }}>
+                    Connected as: {address}
+                  </Text>
+                </HStack>
+              </Box>
+            )}
           </Box>
 
           {/* Load Existing Story Section */}
@@ -619,12 +686,15 @@ Generate a complete story specification now:`
                 <HStack justify="space-between" w="100%">
                   <HStack>
                     <FaUpload />
-                    <Text>Load Existing Story for Editing</Text>
+                    <Text>Load Your Stories for Editing</Text>
                     {editMode && (
                       <Badge colorScheme="blue" variant="solid">
                         Editing Mode
                       </Badge>
                     )}
+                    <Badge colorScheme="green" variant="outline">
+                      {existingStories.length} stories
+                    </Badge>
                   </HStack>
                   <IconButton
                     aria-label="Toggle load section"
@@ -647,23 +717,29 @@ Generate a complete story specification now:`
                 >
                   <VStack spacing={4} align="stretch">
                     <Text fontSize="sm" color="gray.600">
-                      Select an existing story to edit, or create a new one from scratch.
+                      Select one of your existing stories to edit, or create a new one from scratch.
                     </Text>
 
                     <HStack spacing={4} align="end">
                       <FormControl flex={1}>
-                        <FormLabel size="sm">Select Story to Edit</FormLabel>
+                        <FormLabel size="sm">Select Your Story to Edit</FormLabel>
                         {isLoadingStories ? (
                           <HStack p={2}>
-                            <Loader />
+                            <Spinner size="sm" />
+                            <Text fontSize="sm">Loading your stories...</Text>
                           </HStack>
                         ) : (
                           <Select
                             value={selectedStorySlug}
                             onChange={e => handleStorySelection(e.target.value)}
-                            placeholder="Choose a story to edit..."
+                            placeholder={
+                              existingStories.length > 0
+                                ? 'Choose a story to edit...'
+                                : 'No stories found'
+                            }
                             bg="white"
                             _dark={{ bg: 'gray.600' }}
+                            disabled={existingStories.length === 0}
                           >
                             {existingStories.map(story => (
                               <option key={story.slug} value={story.slug}>
@@ -694,10 +770,11 @@ Generate a complete story specification now:`
                           }
                         }}
                         isLoading={isLoadingStory}
-                        loadingText=""
+                        loadingText="Loading..."
                         disabled={
                           !selectedStorySlug ||
-                          !existingStories.some(story => story.slug === selectedStorySlug)
+                          !existingStories.some(story => story.slug === selectedStorySlug) ||
+                          isLoadingStories
                         }
                       >
                         Load Story
@@ -719,7 +796,7 @@ Generate a complete story specification now:`
                       <Alert status="info">
                         <AlertIcon />
                         <Text fontSize="sm">
-                          No existing stories found. Create your first story below!
+                          You haven&apos;t created any stories yet. Create your first story below!
                         </Text>
                       </Alert>
                     )}
@@ -759,6 +836,7 @@ Generate a complete story specification now:`
                       placeholder="Example: Create an adventure about working as a sound technician for Queen during their 1986 Wembley concert. Include technical challenges and interactions with band members..."
                       rows={4}
                       resize="vertical"
+                      disabled={!isConnected}
                     />
                   </FormControl>
 
@@ -769,10 +847,15 @@ Generate a complete story specification now:`
                       onClick={handleClaudeRequest}
                       isLoading={isSendingToClaude}
                       loadingText="Generating..."
-                      disabled={!claudePrompt.trim()}
+                      disabled={!claudePrompt.trim() || !isConnected}
                     >
                       Generate Story
                     </Button>
+                    {!isConnected && (
+                      <Text fontSize="sm" color="gray.500">
+                        Connect wallet to generate stories
+                      </Text>
+                    )}
                   </HStack>
 
                   {/* Claude Response Display */}
@@ -879,6 +962,7 @@ Generate a complete story specification now:`
                   value={formData.title}
                   onChange={e => handleInputChange('title', e.target.value)}
                   placeholder="Enter your story title"
+                  disabled={!isConnected}
                 />
               </FormControl>
 
@@ -896,6 +980,7 @@ Generate a complete story specification now:`
                   bg={editMode ? 'gray.100' : 'gray.50'}
                   _dark={{ bg: editMode ? 'gray.600' : 'gray.700' }}
                   isReadOnly={editMode}
+                  disabled={!isConnected}
                 />
                 <Text fontSize="xs" color="gray.500" mt={1}>
                   URL will be: /{formData.slug}
@@ -911,6 +996,7 @@ Generate a complete story specification now:`
                   rows={15}
                   resize="vertical"
                   fontFamily="mono"
+                  disabled={!isConnected}
                 />
                 <Text fontSize="xs" color="gray.500" mt={1}>
                   Include story setup, characters, milestones, and educational objectives.
@@ -936,6 +1022,7 @@ Generate a complete story specification now:`
                       size="sm"
                       variant="ghost"
                       onClick={onToggleLanguages}
+                      disabled={!isConnected}
                     />
                   </HStack>
                 </FormLabel>
@@ -977,6 +1064,7 @@ Generate a complete story specification now:`
                                   colorScheme="red"
                                   variant="ghost"
                                   onClick={() => removeLanguage(langCode)}
+                                  disabled={!isConnected}
                                 />
                               )}
                             </HStack>
@@ -990,6 +1078,7 @@ Generate a complete story specification now:`
                                 }
                                 placeholder={`Story title in ${langInfo || langCode}`}
                                 size="sm"
+                                disabled={!isConnected}
                               />
                             </FormControl>
 
@@ -1004,6 +1093,7 @@ Generate a complete story specification now:`
                                 rows={2}
                                 size="sm"
                                 resize="vertical"
+                                disabled={!isConnected}
                               />
                             </FormControl>
                           </VStack>
@@ -1026,6 +1116,7 @@ Generate a complete story specification now:`
                               size="sm"
                               variant="outline"
                               onClick={() => addLanguage(lang)}
+                              disabled={!isConnected}
                             >
                               {LANGUAGE_NAMES[lang]}
                             </Button>
@@ -1047,6 +1138,7 @@ Generate a complete story specification now:`
                 isLoading={isSubmitting}
                 loadingText={editMode ? 'Updating Story...' : 'Saving Story...'}
                 disabled={
+                  !isConnected ||
                   !formData.title ||
                   !formData.content ||
                   !formData.homepage_display.en?.title ||
@@ -1055,6 +1147,12 @@ Generate a complete story specification now:`
               >
                 {editMode ? 'Update Story' : 'Create Story'}
               </Button>
+
+              {!isConnected && (
+                <Text fontSize="sm" color="gray.500" textAlign="center">
+                  Connect your wallet to save stories
+                </Text>
+              )}
 
               {submitStatus.type && (
                 <Alert status={submitStatus.type}>
@@ -1103,12 +1201,14 @@ const CreateStoryFallback: React.FC = () => (
   </Container>
 )
 
-// Main component with Suspense boundary
+// Main component with Suspense boundary and authentication guard
 const CreateStoryPage: React.FC = () => {
   return (
-    <Suspense fallback={<CreateStoryFallback />}>
-      <CreateStoryContent />
-    </Suspense>
+    <AuthenticationGuard>
+      <Suspense fallback={<CreateStoryFallback />}>
+        <CreateStoryContent />
+      </Suspense>
+    </AuthenticationGuard>
   )
 }
 
