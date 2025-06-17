@@ -34,6 +34,9 @@ import {
   FaHeart,
   FaStar,
   FaRocket,
+  FaGem,
+  FaCoffee,
+  FaCogs,
 } from 'react-icons/fa'
 import Link from 'next/link'
 import Header from '@/components/Header'
@@ -85,6 +88,29 @@ const PricingPage: React.FC = () => {
       <Box minH="100vh" bgGradient={bgGradient} mt={69}>
         <Container maxW="7xl" py={{ base: 16, md: 24 }}>
           <VStack spacing={16} align="center">
+            {/* Early Adopter Banner */}
+            <Alert
+              status="success"
+              borderRadius="2xl"
+              bg="rgba(72, 187, 120, 0.15)"
+              border="2px solid"
+              borderColor="green.300"
+              backdropFilter="blur(10px)"
+              maxW="4xl"
+              py={4}
+            >
+              <AlertIcon as={FaGem} color="green.300" />
+              <VStack align="start" spacing={1} flex={1}>
+                <Text fontSize="lg" fontWeight="bold" color="white">
+                  🚀 It&apos;s so good to be early!
+                </Text>
+                <Text fontSize="sm" color="whiteAlpha.900">
+                  Join now and earn exclusive benefits, bonus credits, and special recognition as we
+                  grow together! Welcome to Web3!
+                </Text>
+              </VStack>
+            </Alert>
+
             {/* Header */}
             <VStack spacing={6} textAlign="center" maxW="4xl">
               <Badge
@@ -348,10 +374,10 @@ const PricingPage: React.FC = () => {
                     </Box>
                     <VStack spacing={3} textAlign="center">
                       <Heading size="md" color="white">
-                        Start with $10 Credit
+                        Monthly Credit
                       </Heading>
                       <Text color="whiteAlpha.900" fontSize="sm">
-                        Every month, your account gets topped up with $10 worth of usage credits.
+                        Your account gets $10 worth of usage credits each month.
                       </Text>
                     </VStack>
                   </VStack>
@@ -382,7 +408,7 @@ const PricingPage: React.FC = () => {
                     </Box>
                     <VStack spacing={3} textAlign="center">
                       <Heading size="md" color="white">
-                        Pay Only for Usage
+                        Pay Per Use
                       </Heading>
                       <Text color="whiteAlpha.900" fontSize="sm">
                         Each story interaction costs just a few cents. Create unlimited stories, pay
@@ -504,8 +530,8 @@ const PricingPage: React.FC = () => {
                           Example: A 20-step adventure
                         </Text>
                         <Text fontSize="xs" color="whiteAlpha.900">
-                          Costs approximately $0.25 total • That&apos;s 40 adventures from your
-                          monthly $10 credit!
+                          Costs approximately $0.25 total • That&apos;s 20 adventures from your
+                          monthly $5 usage credit!
                         </Text>
                       </VStack>
                     </Alert>
@@ -605,7 +631,7 @@ const PricingPage: React.FC = () => {
                 </Heading>
                 <Text fontSize="lg" color="whiteAlpha.900" maxW="2xl">
                   Join thousands of storytellers creating amazing interactive experiences. Start
-                  free, upgrade when you&apos;re ready.
+                  free, upgrade when you&apos;re ready to unlock the full potential.
                 </Text>
               </VStack>
 
