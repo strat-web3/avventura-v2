@@ -672,7 +672,7 @@ Generate a complete story specification now:`
                 <HStack justify="center" spacing={2}>
                   <FaWallet color="#4299E1" />
                   <Text fontSize="sm" color="blue.600" _dark={{ color: 'blue.300' }}>
-                    Connected as: {address}
+                    {address}
                   </Text>
                 </HStack>
               </Box>
