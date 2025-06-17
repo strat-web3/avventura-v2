@@ -41,6 +41,7 @@ import {
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import Loader from '@/components/Loader'
+import Header from '@/components/Header'
 
 // Language mapping for display
 const LANGUAGE_NAMES: Record<string, string> = {
@@ -594,500 +595,504 @@ Generate a complete story specification now:`
   }
 
   return (
-    <Container maxW="container.lg" py={10}>
-      <VStack spacing={8} align="stretch">
-        {/* Header */}
-        <Box textAlign="center">
-          <Heading size="xl" mb={4}>
-            {editMode ? `Edit Story: ${formData.title}` : 'Create Your Own Story'}
-          </Heading>
-          <Text color="gray.500" fontSize="lg">
-            {editMode
-              ? 'Modify your existing story or create a new one'
-              : 'Generate stories manually or with the help of our faithful assistant'}
-          </Text>
-        </Box>
+    <>
+      <Header />
 
-        {/* Load Existing Story Section */}
-        <Box>
-          <FormControl>
-            <FormLabel>
-              <HStack justify="space-between" w="100%">
-                <HStack>
-                  <FaUpload />
-                  <Text>Load Existing Story for Editing</Text>
-                  {editMode && (
-                    <Badge colorScheme="blue" variant="solid">
-                      Editing Mode
-                    </Badge>
-                  )}
-                </HStack>
-                <IconButton
-                  aria-label="Toggle load section"
-                  icon={isLoadSectionOpen ? <FaChevronUp /> : <FaChevronDown />}
-                  size="sm"
-                  variant="ghost"
-                  onClick={onToggleLoadSection}
-                />
-              </HStack>
-            </FormLabel>
-
-            <Collapse in={isLoadSectionOpen}>
-              <Box
-                p={4}
-                borderWidth="1px"
-                borderRadius="md"
-                bg="gray.50"
-                _dark={{ bg: 'gray.700' }}
-                mt={2}
-              >
-                <VStack spacing={4} align="stretch">
-                  <Text fontSize="sm" color="gray.600">
-                    Select an existing story to edit, or create a new one from scratch.
-                  </Text>
-
-                  <HStack spacing={4} align="end">
-                    <FormControl flex={1}>
-                      <FormLabel size="sm">Select Story to Edit</FormLabel>
-                      {isLoadingStories ? (
-                        <HStack p={2}>
-                          <Loader />
-                        </HStack>
-                      ) : (
-                        <Select
-                          value={selectedStorySlug}
-                          onChange={e => handleStorySelection(e.target.value)}
-                          placeholder="Choose a story to edit..."
-                          bg="white"
-                          _dark={{ bg: 'gray.600' }}
-                        >
-                          {existingStories.map(story => (
-                            <option key={story.slug} value={story.slug}>
-                              {story.title} ({story.slug})
-                            </option>
-                          ))}
-                        </Select>
-                      )}
-                    </FormControl>
-
-                    <Button
-                      leftIcon={<FaUpload />}
-                      colorScheme="blue"
-                      variant="outline"
-                      onClick={() => {
-                        if (
-                          selectedStorySlug &&
-                          existingStories.some(story => story.slug === selectedStorySlug)
-                        ) {
-                          handleStorySelection(selectedStorySlug)
-                        } else {
-                          toast({
-                            title: 'No Story Selected',
-                            description: 'Please select a valid story from the dropdown first.',
-                            status: 'warning',
-                            duration: 3000,
-                          })
-                        }
-                      }}
-                      isLoading={isLoadingStory}
-                      loadingText=""
-                      disabled={
-                        !selectedStorySlug ||
-                        !existingStories.some(story => story.slug === selectedStorySlug)
-                      }
-                    >
-                      Load Story
-                    </Button>
-
-                    {editMode && (
-                      <Button
-                        leftIcon={<FaPlus />}
-                        colorScheme="green"
-                        variant="outline"
-                        onClick={resetToNewStory}
-                      >
-                        New Story
-                      </Button>
-                    )}
-                  </HStack>
-
-                  {existingStories.length === 0 && !isLoadingStories && (
-                    <Alert status="info">
-                      <AlertIcon />
-                      <Text fontSize="sm">
-                        No existing stories found. Create your first story below!
-                      </Text>
-                    </Alert>
-                  )}
-                </VStack>
-              </Box>
-            </Collapse>
-          </FormControl>
-        </Box>
-
-        {!editMode && <Divider />}
-
-        {/* Claude Generation Section */}
-        {!editMode && (
-          <Box>
-            <VStack spacing={4} align="stretch">
-              <Heading as="h2" size="md" color="blue.400">
-                <HStack>
-                  <FaEdit />
-                  <Text>Generate with Rukh AI</Text>
-                </HStack>
-              </Heading>
-
-              <Text fontSize="sm" color="gray.500">
-                Describe your story idea and Rukh will generate a complete adventure with
-                multilingual content.
-              </Text>
-
-              <VStack spacing={3} align="stretch">
-                <FormControl>
-                  <FormLabel>
-                    Describe your story idea. The more detail you give (content, tone, milestones,
-                    ...), the better the story will be!
-                  </FormLabel>
-                  <Textarea
-                    value={claudePrompt}
-                    onChange={e => setClaudePrompt(e.target.value)}
-                    placeholder="Example: Create an adventure about working as a sound technician for Queen during their 1986 Wembley concert. Include technical challenges and interactions with band members..."
-                    rows={4}
-                    resize="vertical"
-                  />
-                </FormControl>
-
-                <HStack>
-                  <Button
-                    leftIcon={<FaEdit />}
-                    colorScheme="blue"
-                    onClick={handleClaudeRequest}
-                    isLoading={isSendingToClaude}
-                    loadingText="Generating..."
-                    disabled={!claudePrompt.trim()}
-                  >
-                    Generate Story
-                  </Button>
-                </HStack>
-
-                {/* Claude Response Display */}
-                {claudeResponse && (
-                  <Box>
-                    {claudeResponse.error ? (
-                      <Alert status="error">
-                        <AlertIcon />
-                        <Box>
-                          <AlertTitle>Generation Failed</AlertTitle>
-                          <AlertDescription>{claudeResponse.error}</AlertDescription>
-                        </Box>
-                      </Alert>
-                    ) : (
-                      <Box
-                        p={4}
-                        bg="gray.50"
-                        borderRadius="md"
-                        borderLeft="4px solid"
-                        borderColor="blue.400"
-                        _dark={{ bg: 'gray.700' }}
-                      >
-                        <VStack spacing={3} align="stretch">
-                          <HStack justify="space-between">
-                            <HStack>
-                              <FaEdit color="#4299E1" />
-                              <Text fontWeight="bold" color="blue.400">
-                                Story Generated
-                              </Text>
-                            </HStack>
-                            {claudeResponse.usage && (
-                              <Badge variant="outline" colorScheme="blue" fontSize="xs">
-                                {claudeResponse.usage.output_tokens} tokens
-                              </Badge>
-                            )}
-                          </HStack>
-
-                          <Text fontSize="sm" color="green.600" fontWeight="medium">
-                            ✅ Form has been pre-filled with the generated story. Review the content
-                            below and make any adjustments needed.
-                          </Text>
-
-                          {/* Show blockchain transaction info if available */}
-                          {claudeResponse.txHash && (
-                            <Box
-                              pt={2}
-                              borderTop="1px solid"
-                              borderColor="gray.200"
-                              _dark={{ borderColor: 'gray.600' }}
-                            >
-                              <VStack spacing={1} align="stretch">
-                                <Text fontSize="xs" color="gray.500" fontWeight="medium">
-                                  Blockchain Transaction:
-                                </Text>
-                                <HStack justify="space-between" fontSize="xs">
-                                  <Text color="gray.600">Network:</Text>
-                                  <Badge variant="subtle" colorScheme="green">
-                                    {claudeResponse.network || 'Unknown'}
-                                  </Badge>
-                                </HStack>
-                                {claudeResponse.explorerLink && (
-                                  <HStack justify="space-between" fontSize="xs">
-                                    <Text color="gray.600">Transaction:</Text>
-                                    <Button
-                                      as="a"
-                                      href={claudeResponse.explorerLink}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      size="xs"
-                                      variant="link"
-                                      colorScheme="blue"
-                                      fontFamily="mono"
-                                    >
-                                      {claudeResponse.txHash.slice(0, 10)}...
-                                    </Button>
-                                  </HStack>
-                                )}
-                              </VStack>
-                            </Box>
-                          )}
-                        </VStack>
-                      </Box>
-                    )}
-                  </Box>
-                )}
-              </VStack>
-            </VStack>
+      <Container maxW="container.lg" py={10} mt={69}>
+        <VStack spacing={8} align="stretch">
+          {/* Header */}
+          <Box textAlign="center">
+            <Heading size="xl" mb={4}>
+              {editMode ? `Edit Story: ${formData.title}` : 'Create Your Own Story'}
+            </Heading>
+            <Text color="gray.500" fontSize="lg">
+              {editMode
+                ? 'Modify your existing story or create a new one'
+                : 'Generate stories manually or with the help of our faithful assistant'}
+            </Text>
           </Box>
-        )}
 
-        {!editMode && <Divider />}
-
-        {/* Story Form */}
-        <VStack spacing={6} align="stretch">
-          <Heading as="h2" size="md">
-            Story Details
-          </Heading>
-
-          {/* Basic Information */}
-          <VStack spacing={4} align="stretch">
-            <FormControl isRequired>
-              <FormLabel>Story Title</FormLabel>
-              <Input
-                value={formData.title}
-                onChange={e => handleInputChange('title', e.target.value)}
-                placeholder="Enter your story title"
-              />
-            </FormControl>
-
-            <FormControl>
-              <FormLabel>
-                Story Slug{' '}
-                <Text as="span" fontSize="sm" color="gray.500">
-                  {editMode ? '(cannot be changed)' : '(auto-generated)'}
-                </Text>
-              </FormLabel>
-              <Input
-                value={formData.slug}
-                onChange={e => handleInputChange('slug', e.target.value)}
-                placeholder="story-slug"
-                bg={editMode ? 'gray.100' : 'gray.50'}
-                _dark={{ bg: editMode ? 'gray.600' : 'gray.700' }}
-                isReadOnly={editMode}
-              />
-              <Text fontSize="xs" color="gray.500" mt={1}>
-                URL will be: /{formData.slug}
-              </Text>
-            </FormControl>
-
-            <FormControl isRequired>
-              <FormLabel>Story Content (Markdown)</FormLabel>
-              <Textarea
-                value={formData.content}
-                onChange={e => handleInputChange('content', e.target.value)}
-                placeholder="Write your story content in markdown format..."
-                rows={15}
-                resize="vertical"
-                fontFamily="mono"
-              />
-              <Text fontSize="xs" color="gray.500" mt={1}>
-                Include story setup, characters, milestones, and educational objectives.
-              </Text>
-            </FormControl>
-          </VStack>
-
-          {/* Homepage Display Languages */}
+          {/* Load Existing Story Section */}
           <Box>
             <FormControl>
               <FormLabel>
                 <HStack justify="space-between" w="100%">
                   <HStack>
-                    <FaLanguage />
-                    <Text>Homepage Display (Multilingual)</Text>
-                    <Badge colorScheme="blue" variant="subtle">
-                      {Object.keys(formData.homepage_display).length} languages
-                    </Badge>
+                    <FaUpload />
+                    <Text>Load Existing Story for Editing</Text>
+                    {editMode && (
+                      <Badge colorScheme="blue" variant="solid">
+                        Editing Mode
+                      </Badge>
+                    )}
                   </HStack>
                   <IconButton
-                    aria-label="Toggle languages"
-                    icon={isLanguagesOpen ? <FaChevronUp /> : <FaChevronDown />}
+                    aria-label="Toggle load section"
+                    icon={isLoadSectionOpen ? <FaChevronUp /> : <FaChevronDown />}
                     size="sm"
                     variant="ghost"
-                    onClick={onToggleLanguages}
+                    onClick={onToggleLoadSection}
                   />
                 </HStack>
               </FormLabel>
 
-              <Collapse in={isLanguagesOpen}>
-                <VStack spacing={4} mt={4}>
-                  {/* Current Languages */}
-                  {Object.entries(formData.homepage_display).map(([langCode, content]) => {
-                    const langInfo = LANGUAGE_NAMES[langCode]
-                    const isRequired = langCode === 'en'
-
-                    return (
-                      <Box
-                        key={langCode}
-                        p={4}
-                        borderWidth="1px"
-                        borderRadius="md"
-                        w="100%"
-                        bg={isRequired ? 'blue.50' : 'gray.50'}
-                        _dark={{
-                          bg: isRequired ? 'blue.900' : 'gray.700',
-                        }}
-                      >
-                        <VStack spacing={3} align="stretch">
-                          <HStack justify="space-between">
-                            <HStack>
-                              <Text fontWeight="bold">{langInfo || langCode.toUpperCase()}</Text>
-                              {isRequired && (
-                                <Badge colorScheme="blue" size="sm">
-                                  Required
-                                </Badge>
-                              )}
-                            </HStack>
-                            {!isRequired && (
-                              <IconButton
-                                aria-label="Remove language"
-                                icon={<FaTrash />}
-                                size="xs"
-                                colorScheme="red"
-                                variant="ghost"
-                                onClick={() => removeLanguage(langCode)}
-                              />
-                            )}
-                          </HStack>
-
-                          <FormControl isRequired={isRequired}>
-                            <FormLabel size="sm">Title</FormLabel>
-                            <Input
-                              value={content.title}
-                              onChange={e =>
-                                handleLanguageChange(langCode, 'title', e.target.value)
-                              }
-                              placeholder={`Story title in ${langInfo || langCode}`}
-                              size="sm"
-                            />
-                          </FormControl>
-
-                          <FormControl isRequired={isRequired}>
-                            <FormLabel size="sm">Description</FormLabel>
-                            <Textarea
-                              value={content.description}
-                              onChange={e =>
-                                handleLanguageChange(langCode, 'description', e.target.value)
-                              }
-                              placeholder={`Brief description in ${langInfo || langCode}`}
-                              rows={2}
-                              size="sm"
-                              resize="vertical"
-                            />
-                          </FormControl>
-                        </VStack>
-                      </Box>
-                    )
-                  })}
-
-                  {/* Add Language Options */}
-                  <Box>
-                    <Text fontSize="sm" fontWeight="medium" mb={2}>
-                      Add More Languages:
+              <Collapse in={isLoadSectionOpen}>
+                <Box
+                  p={4}
+                  borderWidth="1px"
+                  borderRadius="md"
+                  bg="gray.50"
+                  _dark={{ bg: 'gray.700' }}
+                  mt={2}
+                >
+                  <VStack spacing={4} align="stretch">
+                    <Text fontSize="sm" color="gray.600">
+                      Select an existing story to edit, or create a new one from scratch.
                     </Text>
-                    <HStack wrap="wrap" spacing={2}>
-                      {Object.keys(LANGUAGE_NAMES)
-                        .filter(lang => !formData.homepage_display[lang])
-                        .map(lang => (
-                          <Button
-                            key={lang}
-                            leftIcon={<FaPlus />}
-                            size="sm"
-                            variant="outline"
-                            onClick={() => addLanguage(lang)}
+
+                    <HStack spacing={4} align="end">
+                      <FormControl flex={1}>
+                        <FormLabel size="sm">Select Story to Edit</FormLabel>
+                        {isLoadingStories ? (
+                          <HStack p={2}>
+                            <Loader />
+                          </HStack>
+                        ) : (
+                          <Select
+                            value={selectedStorySlug}
+                            onChange={e => handleStorySelection(e.target.value)}
+                            placeholder="Choose a story to edit..."
+                            bg="white"
+                            _dark={{ bg: 'gray.600' }}
                           >
-                            {LANGUAGE_NAMES[lang]}
-                          </Button>
-                        ))}
+                            {existingStories.map(story => (
+                              <option key={story.slug} value={story.slug}>
+                                {story.title} ({story.slug})
+                              </option>
+                            ))}
+                          </Select>
+                        )}
+                      </FormControl>
+
+                      <Button
+                        leftIcon={<FaUpload />}
+                        colorScheme="blue"
+                        variant="outline"
+                        onClick={() => {
+                          if (
+                            selectedStorySlug &&
+                            existingStories.some(story => story.slug === selectedStorySlug)
+                          ) {
+                            handleStorySelection(selectedStorySlug)
+                          } else {
+                            toast({
+                              title: 'No Story Selected',
+                              description: 'Please select a valid story from the dropdown first.',
+                              status: 'warning',
+                              duration: 3000,
+                            })
+                          }
+                        }}
+                        isLoading={isLoadingStory}
+                        loadingText=""
+                        disabled={
+                          !selectedStorySlug ||
+                          !existingStories.some(story => story.slug === selectedStorySlug)
+                        }
+                      >
+                        Load Story
+                      </Button>
+
+                      {editMode && (
+                        <Button
+                          leftIcon={<FaPlus />}
+                          colorScheme="green"
+                          variant="outline"
+                          onClick={resetToNewStory}
+                        >
+                          New Story
+                        </Button>
+                      )}
                     </HStack>
-                  </Box>
-                </VStack>
+
+                    {existingStories.length === 0 && !isLoadingStories && (
+                      <Alert status="info">
+                        <AlertIcon />
+                        <Text fontSize="sm">
+                          No existing stories found. Create your first story below!
+                        </Text>
+                      </Alert>
+                    )}
+                  </VStack>
+                </Box>
               </Collapse>
             </FormControl>
           </Box>
 
-          {/* Submit Section */}
-          <VStack spacing={4}>
-            <Button
-              leftIcon={<FaSave />}
-              colorScheme="green"
-              size="lg"
-              onClick={handleSubmit}
-              isLoading={isSubmitting}
-              loadingText={editMode ? 'Updating Story...' : 'Saving Story...'}
-              disabled={
-                !formData.title ||
-                !formData.content ||
-                !formData.homepage_display.en?.title ||
-                !formData.homepage_display.en?.description
-              }
-            >
-              {editMode ? 'Update Story' : 'Create Story'}
-            </Button>
+          {!editMode && <Divider />}
 
-            {submitStatus.type && (
-              <Alert status={submitStatus.type}>
-                <AlertIcon />
-                <Box>
-                  <AlertTitle>
-                    {submitStatus.type === 'success'
-                      ? editMode
-                        ? 'Story Updated!'
-                        : 'Story Created!'
-                      : editMode
-                        ? 'Update Failed'
-                        : 'Creation Failed'}
-                  </AlertTitle>
-                  <AlertDescription>{submitStatus.message}</AlertDescription>
-                </Box>
-              </Alert>
-            )}
+          {/* Claude Generation Section */}
+          {!editMode && (
+            <Box>
+              <VStack spacing={4} align="stretch">
+                <Heading as="h2" size="md" color="blue.400">
+                  <HStack>
+                    <FaEdit />
+                    <Text>Generate with Rukh AI</Text>
+                  </HStack>
+                </Heading>
 
-            {submitStatus.type === 'success' && (
-              <HStack spacing={4}>
-                <Link href="/">
-                  <Button leftIcon={<FaEye />} variant="outline">
-                    View All Stories
-                  </Button>
-                </Link>
-                <Link href={`/${formData.slug}`}>
-                  <Button leftIcon={<FaEye />} colorScheme="blue" variant="outline">
-                    Play This Story
-                  </Button>
-                </Link>
-              </HStack>
-            )}
+                <Text fontSize="sm" color="gray.500">
+                  Describe your story idea and Rukh will generate a complete adventure with
+                  multilingual content.
+                </Text>
+
+                <VStack spacing={3} align="stretch">
+                  <FormControl>
+                    <FormLabel>
+                      Describe your story idea. The more detail you give (content, tone, milestones,
+                      ...), the better the story will be!
+                    </FormLabel>
+                    <Textarea
+                      value={claudePrompt}
+                      onChange={e => setClaudePrompt(e.target.value)}
+                      placeholder="Example: Create an adventure about working as a sound technician for Queen during their 1986 Wembley concert. Include technical challenges and interactions with band members..."
+                      rows={4}
+                      resize="vertical"
+                    />
+                  </FormControl>
+
+                  <HStack>
+                    <Button
+                      leftIcon={<FaEdit />}
+                      colorScheme="blue"
+                      onClick={handleClaudeRequest}
+                      isLoading={isSendingToClaude}
+                      loadingText="Generating..."
+                      disabled={!claudePrompt.trim()}
+                    >
+                      Generate Story
+                    </Button>
+                  </HStack>
+
+                  {/* Claude Response Display */}
+                  {claudeResponse && (
+                    <Box>
+                      {claudeResponse.error ? (
+                        <Alert status="error">
+                          <AlertIcon />
+                          <Box>
+                            <AlertTitle>Generation Failed</AlertTitle>
+                            <AlertDescription>{claudeResponse.error}</AlertDescription>
+                          </Box>
+                        </Alert>
+                      ) : (
+                        <Box
+                          p={4}
+                          bg="gray.50"
+                          borderRadius="md"
+                          borderLeft="4px solid"
+                          borderColor="blue.400"
+                          _dark={{ bg: 'gray.700' }}
+                        >
+                          <VStack spacing={3} align="stretch">
+                            <HStack justify="space-between">
+                              <HStack>
+                                <FaEdit color="#4299E1" />
+                                <Text fontWeight="bold" color="blue.400">
+                                  Story Generated
+                                </Text>
+                              </HStack>
+                              {claudeResponse.usage && (
+                                <Badge variant="outline" colorScheme="blue" fontSize="xs">
+                                  {claudeResponse.usage.output_tokens} tokens
+                                </Badge>
+                              )}
+                            </HStack>
+
+                            <Text fontSize="sm" color="green.600" fontWeight="medium">
+                              ✅ Form has been pre-filled with the generated story. Review the
+                              content below and make any adjustments needed.
+                            </Text>
+
+                            {/* Show blockchain transaction info if available */}
+                            {claudeResponse.txHash && (
+                              <Box
+                                pt={2}
+                                borderTop="1px solid"
+                                borderColor="gray.200"
+                                _dark={{ borderColor: 'gray.600' }}
+                              >
+                                <VStack spacing={1} align="stretch">
+                                  <Text fontSize="xs" color="gray.500" fontWeight="medium">
+                                    Blockchain Transaction:
+                                  </Text>
+                                  <HStack justify="space-between" fontSize="xs">
+                                    <Text color="gray.600">Network:</Text>
+                                    <Badge variant="subtle" colorScheme="green">
+                                      {claudeResponse.network || 'Unknown'}
+                                    </Badge>
+                                  </HStack>
+                                  {claudeResponse.explorerLink && (
+                                    <HStack justify="space-between" fontSize="xs">
+                                      <Text color="gray.600">Transaction:</Text>
+                                      <Button
+                                        as="a"
+                                        href={claudeResponse.explorerLink}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        size="xs"
+                                        variant="link"
+                                        colorScheme="blue"
+                                        fontFamily="mono"
+                                      >
+                                        {claudeResponse.txHash.slice(0, 10)}...
+                                      </Button>
+                                    </HStack>
+                                  )}
+                                </VStack>
+                              </Box>
+                            )}
+                          </VStack>
+                        </Box>
+                      )}
+                    </Box>
+                  )}
+                </VStack>
+              </VStack>
+            </Box>
+          )}
+
+          {!editMode && <Divider />}
+
+          {/* Story Form */}
+          <VStack spacing={6} align="stretch">
+            <Heading as="h2" size="md">
+              Story Details
+            </Heading>
+
+            {/* Basic Information */}
+            <VStack spacing={4} align="stretch">
+              <FormControl isRequired>
+                <FormLabel>Story Title</FormLabel>
+                <Input
+                  value={formData.title}
+                  onChange={e => handleInputChange('title', e.target.value)}
+                  placeholder="Enter your story title"
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>
+                  Story Slug{' '}
+                  <Text as="span" fontSize="sm" color="gray.500">
+                    {editMode ? '(cannot be changed)' : '(auto-generated)'}
+                  </Text>
+                </FormLabel>
+                <Input
+                  value={formData.slug}
+                  onChange={e => handleInputChange('slug', e.target.value)}
+                  placeholder="story-slug"
+                  bg={editMode ? 'gray.100' : 'gray.50'}
+                  _dark={{ bg: editMode ? 'gray.600' : 'gray.700' }}
+                  isReadOnly={editMode}
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  URL will be: /{formData.slug}
+                </Text>
+              </FormControl>
+
+              <FormControl isRequired>
+                <FormLabel>Story Content (Markdown)</FormLabel>
+                <Textarea
+                  value={formData.content}
+                  onChange={e => handleInputChange('content', e.target.value)}
+                  placeholder="Write your story content in markdown format..."
+                  rows={15}
+                  resize="vertical"
+                  fontFamily="mono"
+                />
+                <Text fontSize="xs" color="gray.500" mt={1}>
+                  Include story setup, characters, milestones, and educational objectives.
+                </Text>
+              </FormControl>
+            </VStack>
+
+            {/* Homepage Display Languages */}
+            <Box>
+              <FormControl>
+                <FormLabel>
+                  <HStack justify="space-between" w="100%">
+                    <HStack>
+                      <FaLanguage />
+                      <Text>Homepage Display (Multilingual)</Text>
+                      <Badge colorScheme="blue" variant="subtle">
+                        {Object.keys(formData.homepage_display).length} languages
+                      </Badge>
+                    </HStack>
+                    <IconButton
+                      aria-label="Toggle languages"
+                      icon={isLanguagesOpen ? <FaChevronUp /> : <FaChevronDown />}
+                      size="sm"
+                      variant="ghost"
+                      onClick={onToggleLanguages}
+                    />
+                  </HStack>
+                </FormLabel>
+
+                <Collapse in={isLanguagesOpen}>
+                  <VStack spacing={4} mt={4}>
+                    {/* Current Languages */}
+                    {Object.entries(formData.homepage_display).map(([langCode, content]) => {
+                      const langInfo = LANGUAGE_NAMES[langCode]
+                      const isRequired = langCode === 'en'
+
+                      return (
+                        <Box
+                          key={langCode}
+                          p={4}
+                          borderWidth="1px"
+                          borderRadius="md"
+                          w="100%"
+                          bg={isRequired ? 'blue.50' : 'gray.50'}
+                          _dark={{
+                            bg: isRequired ? 'blue.900' : 'gray.700',
+                          }}
+                        >
+                          <VStack spacing={3} align="stretch">
+                            <HStack justify="space-between">
+                              <HStack>
+                                <Text fontWeight="bold">{langInfo || langCode.toUpperCase()}</Text>
+                                {isRequired && (
+                                  <Badge colorScheme="blue" size="sm">
+                                    Required
+                                  </Badge>
+                                )}
+                              </HStack>
+                              {!isRequired && (
+                                <IconButton
+                                  aria-label="Remove language"
+                                  icon={<FaTrash />}
+                                  size="xs"
+                                  colorScheme="red"
+                                  variant="ghost"
+                                  onClick={() => removeLanguage(langCode)}
+                                />
+                              )}
+                            </HStack>
+
+                            <FormControl isRequired={isRequired}>
+                              <FormLabel size="sm">Title</FormLabel>
+                              <Input
+                                value={content.title}
+                                onChange={e =>
+                                  handleLanguageChange(langCode, 'title', e.target.value)
+                                }
+                                placeholder={`Story title in ${langInfo || langCode}`}
+                                size="sm"
+                              />
+                            </FormControl>
+
+                            <FormControl isRequired={isRequired}>
+                              <FormLabel size="sm">Description</FormLabel>
+                              <Textarea
+                                value={content.description}
+                                onChange={e =>
+                                  handleLanguageChange(langCode, 'description', e.target.value)
+                                }
+                                placeholder={`Brief description in ${langInfo || langCode}`}
+                                rows={2}
+                                size="sm"
+                                resize="vertical"
+                              />
+                            </FormControl>
+                          </VStack>
+                        </Box>
+                      )
+                    })}
+
+                    {/* Add Language Options */}
+                    <Box>
+                      <Text fontSize="sm" fontWeight="medium" mb={2}>
+                        Add More Languages:
+                      </Text>
+                      <HStack wrap="wrap" spacing={2}>
+                        {Object.keys(LANGUAGE_NAMES)
+                          .filter(lang => !formData.homepage_display[lang])
+                          .map(lang => (
+                            <Button
+                              key={lang}
+                              leftIcon={<FaPlus />}
+                              size="sm"
+                              variant="outline"
+                              onClick={() => addLanguage(lang)}
+                            >
+                              {LANGUAGE_NAMES[lang]}
+                            </Button>
+                          ))}
+                      </HStack>
+                    </Box>
+                  </VStack>
+                </Collapse>
+              </FormControl>
+            </Box>
+
+            {/* Submit Section */}
+            <VStack spacing={4}>
+              <Button
+                leftIcon={<FaSave />}
+                colorScheme="green"
+                size="lg"
+                onClick={handleSubmit}
+                isLoading={isSubmitting}
+                loadingText={editMode ? 'Updating Story...' : 'Saving Story...'}
+                disabled={
+                  !formData.title ||
+                  !formData.content ||
+                  !formData.homepage_display.en?.title ||
+                  !formData.homepage_display.en?.description
+                }
+              >
+                {editMode ? 'Update Story' : 'Create Story'}
+              </Button>
+
+              {submitStatus.type && (
+                <Alert status={submitStatus.type}>
+                  <AlertIcon />
+                  <Box>
+                    <AlertTitle>
+                      {submitStatus.type === 'success'
+                        ? editMode
+                          ? 'Story Updated!'
+                          : 'Story Created!'
+                        : editMode
+                          ? 'Update Failed'
+                          : 'Creation Failed'}
+                    </AlertTitle>
+                    <AlertDescription>{submitStatus.message}</AlertDescription>
+                  </Box>
+                </Alert>
+              )}
+
+              {submitStatus.type === 'success' && (
+                <HStack spacing={4}>
+                  <Link href="/">
+                    <Button leftIcon={<FaEye />} variant="outline">
+                      View All Stories
+                    </Button>
+                  </Link>
+                  <Link href={`/${formData.slug}`}>
+                    <Button leftIcon={<FaEye />} colorScheme="blue" variant="outline">
+                      Play This Story
+                    </Button>
+                  </Link>
+                </HStack>
+              )}
+            </VStack>
           </VStack>
         </VStack>
-      </VStack>
-    </Container>
+      </Container>
+    </>
   )
 }
 

@@ -88,7 +88,7 @@ export default function Home() {
   const hasEnoughBalance = Number(balance) >= 0.0001
 
   return (
-    <Container maxW="container.sm" py={20}>
+    <Container maxW="container.sm" py={20} mt={69}>
       <StoriesGrid />
     </Container>
   )
