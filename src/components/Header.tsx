@@ -112,7 +112,10 @@ export default function Header() {
             />
             <MenuList>
               <Link href="/create">
-                <MenuItem fontSize="md">Create your own!!</MenuItem>
+                <MenuItem fontSize="md">Create</MenuItem>
+              </Link>
+              <Link href="/pricing">
+                <MenuItem fontSize="md">Pricing</MenuItem>
               </Link>
             </MenuList>
           </Menu>
