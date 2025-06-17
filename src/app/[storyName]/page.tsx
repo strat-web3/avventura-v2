@@ -400,6 +400,7 @@ export default function StoryPage() {
     setState(prev => ({ ...prev, isLoading: true }))
 
     try {
+      // **UPDATED: Use the main story API route for analytics tracking**
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -438,6 +439,7 @@ export default function StoryPage() {
     setState(prev => ({ ...prev, isLoading: true }))
 
     try {
+      // **UPDATED: Use the main story API route for analytics tracking**
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -562,6 +564,25 @@ export default function StoryPage() {
       // Update session storage
       SessionManager.updateLastAccessed(state.sessionId)
 
+      // **IMPORTANT: Make analytics tracking call even when using preloaded data**
+      try {
+        await fetch('/api/story', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: state.sessionId,
+            choice: choiceNumber,
+            storyName,
+            language: languageName,
+            conversationHistory: newHistory,
+          }),
+        })
+        console.log('✅ Analytics tracked for preloaded choice')
+      } catch (analyticsError) {
+        console.error('❌ Analytics tracking failed:', analyticsError)
+        // Don't show error to user since the story continues working
+      }
+
       // Start preloading for the next set of choices
       startPreloading(state.sessionId, newHistory)
 
@@ -572,6 +593,7 @@ export default function StoryPage() {
     setState(prev => ({ ...prev, isLoading: true }))
 
     try {
+      // **UPDATED: Use the main story API route for analytics tracking**
       const response = await fetch('/api/story', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
