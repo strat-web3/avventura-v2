@@ -36,7 +36,7 @@ export interface HomepageDisplay {
   }
 }
 
-// Story interface with single entry, JSON homepage_display, and owner
+// Story interface with single entry, JSON homepage_display, owner, and analytics
 export interface Story {
   id: number
   slug: string
@@ -47,6 +47,39 @@ export interface Story {
   created_at: Date
   updated_at: Date
   is_active: boolean
+  // Analytics columns
+  sessions: number
+  requests: number
+  tokens: number
+  costs: number // in USD
+}
+
+// Analytics-specific interfaces
+export interface StoryStats {
+  totalStories: number
+  oldestStory: string | null
+  newestStory: string | null
+  languagesSupported: number
+  storiesWithOwners: number
+  uniqueOwners: number
+  // Analytics totals
+  totalSessions: number
+  totalRequests: number
+  totalTokens: number
+  totalCosts: number
+  averageSessionsPerStory: number
+  averageRequestsPerStory: number
+}
+
+export interface StoryAnalytics {
+  storySlug: string
+  sessions: number
+  requests: number
+  tokens: number
+  costs: number
+  costPerSession: number
+  costPerRequest: number
+  tokensPerRequest: number
 }
 
 // Supported languages
@@ -124,7 +157,12 @@ export class StoryService {
     try {
       console.log(`🔍 Looking for story '${slug}'`)
 
-      const query = 'SELECT * FROM stories WHERE slug = $1 AND is_active = true'
+      const query = `
+        SELECT id, slug, title, content, homepage_display, owner, created_at, updated_at, is_active,
+               sessions, requests, tokens, costs
+        FROM stories 
+        WHERE slug = $1 AND is_active = true
+      `
       const result = await pool.query(query, [slug])
 
       if (result.rows.length > 0) {
@@ -147,7 +185,13 @@ export class StoryService {
     const pool = getPool()
 
     try {
-      const query = 'SELECT * FROM stories WHERE is_active = true ORDER BY created_at DESC'
+      const query = `
+        SELECT id, slug, title, content, homepage_display, owner, created_at, updated_at, is_active,
+               sessions, requests, tokens, costs
+        FROM stories 
+        WHERE is_active = true 
+        ORDER BY created_at DESC
+      `
       const result = await pool.query(query)
 
       console.log(`✅ Found ${result.rows.length} active stories`)
@@ -165,8 +209,13 @@ export class StoryService {
     const pool = getPool()
 
     try {
-      const query =
-        'SELECT * FROM stories WHERE owner = $1 AND is_active = true ORDER BY created_at DESC'
+      const query = `
+        SELECT id, slug, title, content, homepage_display, owner, created_at, updated_at, is_active,
+               sessions, requests, tokens, costs
+        FROM stories 
+        WHERE owner = $1 AND is_active = true 
+        ORDER BY created_at DESC
+      `
       const result = await pool.query(query, [ownerAddress])
 
       console.log(`✅ Found ${result.rows.length} stories for owner: ${ownerAddress}`)
@@ -260,7 +309,10 @@ export class StoryService {
    * Automatically fills missing language translations with English content
    */
   static async upsertStory(
-    storyData: Omit<Story, 'id' | 'created_at' | 'updated_at'>,
+    storyData: Omit<
+      Story,
+      'id' | 'created_at' | 'updated_at' | 'sessions' | 'requests' | 'tokens' | 'costs'
+    >,
     ownerAddress?: string
   ): Promise<Story> {
     const pool = getPool()
@@ -278,8 +330,8 @@ export class StoryService {
       const enhancedHomepageDisplay = fillLanguageFallbacks(storyData.homepage_display)
 
       const query = `
-        INSERT INTO stories (slug, title, content, homepage_display, owner, is_active)
-        VALUES ($1, $2, $3, $4, $5, $6)
+        INSERT INTO stories (slug, title, content, homepage_display, owner, is_active, sessions, requests, tokens, costs)
+        VALUES ($1, $2, $3, $4, $5, $6, 0, 0, 0, 0.0000)
         ON CONFLICT (slug) 
         DO UPDATE SET 
           title = EXCLUDED.title,
@@ -395,53 +447,201 @@ export class StoryService {
     }
   }
 
+  // ========================================
+  // ANALYTICS METHODS
+  // ========================================
+
   /**
-   * Get story statistics
+   * Increment session count when a user starts a new story session
    */
-  static async getStoryStats(): Promise<{
-    totalStories: number
-    oldestStory: string | null
-    newestStory: string | null
-    languagesSupported: number
-    storiesWithOwners: number
-    uniqueOwners: number
-  }> {
+  static async incrementSessions(slug: string): Promise<void> {
     const pool = getPool()
 
     try {
-      // Total active stories
-      const totalResult = await pool.query(
-        'SELECT COUNT(*) as count FROM stories WHERE is_active = true'
-      )
-      const totalStories = parseInt(totalResult.rows[0].count)
+      const query = `
+        UPDATE stories 
+        SET sessions = sessions + 1, updated_at = NOW()
+        WHERE slug = $1 AND is_active = true
+      `
 
-      // Stories with owners
-      const ownedResult = await pool.query(
-        'SELECT COUNT(*) as count FROM stories WHERE is_active = true AND owner IS NOT NULL'
-      )
-      const storiesWithOwners = parseInt(ownedResult.rows[0].count)
+      await pool.query(query, [slug])
+      console.log(`📊 Incremented sessions for story: ${slug}`)
+    } catch (error) {
+      console.error('Error incrementing sessions:', error)
+      throw new Error(`Failed to increment sessions for story: ${slug}`)
+    }
+  }
 
-      // Unique owners
-      const uniqueOwnersResult = await pool.query(
-        'SELECT COUNT(DISTINCT owner) as count FROM stories WHERE is_active = true AND owner IS NOT NULL'
-      )
-      const uniqueOwners = parseInt(uniqueOwnersResult.rows[0].count)
+  /**
+   * Increment request count and update token/cost analytics
+   */
+  static async incrementRequests(
+    slug: string,
+    tokenCount: number = 0,
+    cost: number = 0
+  ): Promise<void> {
+    const pool = getPool()
 
-      // Oldest and newest stories
-      const oldestResult = await pool.query(
-        'SELECT slug FROM stories WHERE is_active = true ORDER BY created_at ASC LIMIT 1'
+    try {
+      const query = `
+        UPDATE stories 
+        SET requests = requests + 1, 
+            tokens = tokens + $2, 
+            costs = costs + $3,
+            updated_at = NOW()
+        WHERE slug = $1 AND is_active = true
+      `
+
+      await pool.query(query, [slug, tokenCount, cost])
+      console.log(
+        `📊 Updated analytics for story ${slug}: +1 request, +${tokenCount} tokens, +$${cost.toFixed(4)}`
       )
-      const newestResult = await pool.query(
-        'SELECT slug FROM stories WHERE is_active = true ORDER BY created_at DESC LIMIT 1'
-      )
+    } catch (error) {
+      console.error('Error incrementing requests:', error)
+      throw new Error(`Failed to increment requests for story: ${slug}`)
+    }
+  }
+
+  /**
+   * Get detailed analytics for a specific story
+   */
+  static async getStoryAnalytics(slug: string): Promise<StoryAnalytics | null> {
+    const pool = getPool()
+
+    try {
+      const query = `
+        SELECT slug, sessions, requests, tokens, costs,
+               CASE WHEN sessions > 0 THEN costs / sessions ELSE 0 END as cost_per_session,
+               CASE WHEN requests > 0 THEN costs / requests ELSE 0 END as cost_per_request,
+               CASE WHEN requests > 0 THEN tokens / requests ELSE 0 END as tokens_per_request
+        FROM stories 
+        WHERE slug = $1 AND is_active = true
+      `
+
+      const result = await pool.query(query, [slug])
+      if (result.rows.length === 0) return null
+
+      const row = result.rows[0]
+      return {
+        storySlug: row.slug,
+        sessions: row.sessions,
+        requests: row.requests,
+        tokens: row.tokens,
+        costs: parseFloat(row.costs),
+        costPerSession: parseFloat(row.cost_per_session),
+        costPerRequest: parseFloat(row.cost_per_request),
+        tokensPerRequest: parseFloat(row.tokens_per_request),
+      }
+    } catch (error) {
+      console.error('Error fetching story analytics:', error)
+      throw new Error(`Failed to fetch analytics for story: ${slug}`)
+    }
+  }
+
+  /**
+   * Get analytics for all stories
+   */
+  static async getAllStoriesAnalytics(): Promise<StoryAnalytics[]> {
+    const pool = getPool()
+
+    try {
+      const query = `
+        SELECT slug, sessions, requests, tokens, costs,
+               CASE WHEN sessions > 0 THEN costs / sessions ELSE 0 END as cost_per_session,
+               CASE WHEN requests > 0 THEN costs / requests ELSE 0 END as cost_per_request,
+               CASE WHEN requests > 0 THEN tokens / requests ELSE 0 END as tokens_per_request
+        FROM stories 
+        WHERE is_active = true 
+        ORDER BY requests DESC
+      `
+
+      const result = await pool.query(query)
+      return result.rows.map(row => ({
+        storySlug: row.slug,
+        sessions: row.sessions,
+        requests: row.requests,
+        tokens: row.tokens,
+        costs: parseFloat(row.costs),
+        costPerSession: parseFloat(row.cost_per_session),
+        costPerRequest: parseFloat(row.cost_per_request),
+        tokensPerRequest: parseFloat(row.tokens_per_request),
+      }))
+    } catch (error) {
+      console.error('Error fetching all stories analytics:', error)
+      throw new Error('Failed to fetch analytics for all stories')
+    }
+  }
+
+  /**
+   * Calculate Claude API costs based on tokens and model
+   */
+  static calculateClaudeCost(inputTokens: number, outputTokens: number, model: string): number {
+    // Claude pricing (as of 2024)
+    const pricing = {
+      'claude-3-5-haiku-20241022': {
+        input: 0.00025, // $0.25 per 1K input tokens
+        output: 0.00125, // $1.25 per 1K output tokens
+      },
+      'claude-sonnet-4-20250514': {
+        input: 0.003, // $3.00 per 1K input tokens
+        output: 0.015, // $15.00 per 1K output tokens
+      },
+    }
+
+    const modelPricing =
+      pricing[model as keyof typeof pricing] || pricing['claude-3-5-haiku-20241022']
+
+    const inputCost = (inputTokens / 1000) * modelPricing.input
+    const outputCost = (outputTokens / 1000) * modelPricing.output
+
+    return inputCost + outputCost
+  }
+
+  // ========================================
+  // ENHANCED STATS WITH ANALYTICS
+  // ========================================
+
+  /**
+   * Get comprehensive story statistics including analytics
+   */
+  static async getStoryStats(): Promise<StoryStats> {
+    const pool = getPool()
+
+    try {
+      // Get comprehensive stats including analytics
+      const query = `
+        SELECT 
+          COUNT(*) as total_stories,
+          MIN(created_at) as oldest_story,
+          MAX(created_at) as newest_story,
+          COUNT(CASE WHEN owner IS NOT NULL THEN 1 END) as stories_with_owners,
+          COUNT(DISTINCT owner) FILTER (WHERE owner IS NOT NULL) as unique_owners,
+          SUM(sessions) as total_sessions,
+          SUM(requests) as total_requests,
+          SUM(tokens) as total_tokens,
+          SUM(costs) as total_costs,
+          CASE WHEN COUNT(*) > 0 THEN AVG(sessions) ELSE 0 END as avg_sessions_per_story,
+          CASE WHEN COUNT(*) > 0 THEN AVG(requests) ELSE 0 END as avg_requests_per_story
+        FROM stories 
+        WHERE is_active = true
+      `
+
+      const result = await pool.query(query)
+      const row = result.rows[0]
 
       return {
-        totalStories,
-        oldestStory: oldestResult.rows[0]?.slug || null,
-        newestStory: newestResult.rows[0]?.slug || null,
+        totalStories: parseInt(row.total_stories),
+        oldestStory: row.oldest_story,
+        newestStory: row.newest_story,
         languagesSupported: SUPPORTED_LANGUAGES.length,
-        storiesWithOwners,
-        uniqueOwners,
+        storiesWithOwners: parseInt(row.stories_with_owners),
+        uniqueOwners: parseInt(row.unique_owners),
+        totalSessions: parseInt(row.total_sessions) || 0,
+        totalRequests: parseInt(row.total_requests) || 0,
+        totalTokens: parseInt(row.total_tokens) || 0,
+        totalCosts: parseFloat(row.total_costs) || 0,
+        averageSessionsPerStory: parseFloat(row.avg_sessions_per_story) || 0,
+        averageRequestsPerStory: parseFloat(row.avg_requests_per_story) || 0,
       }
     } catch (error) {
       console.error('Error fetching story stats:', error)
@@ -458,7 +658,9 @@ export class StoryService {
 
     try {
       let query = `
-        SELECT * FROM stories 
+        SELECT id, slug, title, content, homepage_display, owner, created_at, updated_at, is_active,
+               sessions, requests, tokens, costs
+        FROM stories 
         WHERE is_active = true 
         AND (title ILIKE $1 OR content ILIKE $1 OR homepage_display::text ILIKE $1)
       `
@@ -505,25 +707,39 @@ export class StoryService {
   }
 
   /**
-   * Get ownership statistics
+   * Get ownership statistics with analytics
    */
   static async getOwnershipStats(ownerAddress: string): Promise<{
     totalStories: number
     latestStory: string | null
     oldestStory: string | null
     totalLanguages: number
+    totalSessions: number
+    totalRequests: number
+    totalTokens: number
+    totalCosts: number
   }> {
     const pool = getPool()
 
     try {
-      // Total stories by owner
-      const totalResult = await pool.query(
-        'SELECT COUNT(*) as count FROM stories WHERE owner = $1 AND is_active = true',
-        [ownerAddress]
-      )
-      const totalStories = parseInt(totalResult.rows[0].count)
+      // Get comprehensive ownership stats including analytics
+      const query = `
+        SELECT 
+          COUNT(*) as total_stories,
+          MIN(created_at) as oldest_created,
+          MAX(created_at) as latest_created,
+          SUM(sessions) as total_sessions,
+          SUM(requests) as total_requests,
+          SUM(tokens) as total_tokens,
+          SUM(costs) as total_costs
+        FROM stories 
+        WHERE owner = $1 AND is_active = true
+      `
 
-      // Latest and oldest stories by owner
+      const result = await pool.query(query, [ownerAddress])
+      const stats = result.rows[0]
+
+      // Get latest and oldest story slugs
       const latestResult = await pool.query(
         'SELECT slug FROM stories WHERE owner = $1 AND is_active = true ORDER BY created_at DESC LIMIT 1',
         [ownerAddress]
@@ -533,20 +749,23 @@ export class StoryService {
         [ownerAddress]
       )
 
-      // Count unique languages across all stories by owner
+      // Count unique languages
       const languagesResult = await pool.query(
         `SELECT DISTINCT jsonb_object_keys(homepage_display) as language 
          FROM stories 
          WHERE owner = $1 AND is_active = true`,
         [ownerAddress]
       )
-      const totalLanguages = languagesResult.rows.length
 
       return {
-        totalStories,
+        totalStories: parseInt(stats.total_stories),
         latestStory: latestResult.rows[0]?.slug || null,
         oldestStory: oldestResult.rows[0]?.slug || null,
-        totalLanguages,
+        totalLanguages: languagesResult.rows.length,
+        totalSessions: parseInt(stats.total_sessions) || 0,
+        totalRequests: parseInt(stats.total_requests) || 0,
+        totalTokens: parseInt(stats.total_tokens) || 0,
+        totalCosts: parseFloat(stats.total_costs) || 0,
       }
     } catch (error) {
       console.error('Error fetching ownership stats:', error)

@@ -17,7 +17,7 @@ export async function GET() {
       )
     }
 
-    // Get comprehensive system health
+    // Get comprehensive system health including analytics
     const [stories, stats] = await Promise.all([
       StoryService.getAllStories(),
       StoryService.getStoryStats(),
@@ -50,6 +50,7 @@ export async function GET() {
         storiesCount: stats.totalStories,
         oldestStory: stats.oldestStory,
         newestStory: stats.newestStory,
+        schema: 'single-entry-with-analytics',
       },
 
       // Multilingual capabilities
@@ -68,6 +69,25 @@ export async function GET() {
         database: 'connected',
         ai: 'claude-3-5-haiku',
         translation: 'real-time',
+        analytics: 'enabled',
+      },
+
+      // Analytics overview
+      analytics: {
+        totalSessions: stats.totalSessions,
+        totalRequests: stats.totalRequests,
+        totalTokens: stats.totalTokens,
+        totalCosts: `$${stats.totalCosts.toFixed(4)}`,
+        averageSessionsPerStory: Math.round(stats.averageSessionsPerStory * 100) / 100,
+        averageRequestsPerStory: Math.round(stats.averageRequestsPerStory * 100) / 100,
+        averageCostPerSession:
+          stats.totalSessions > 0
+            ? `$${(stats.totalCosts / stats.totalSessions).toFixed(4)}`
+            : '$0.0000',
+        averageCostPerRequest:
+          stats.totalRequests > 0
+            ? `$${(stats.totalCosts / stats.totalRequests).toFixed(4)}`
+            : '$0.0000',
       },
 
       // Stories overview
@@ -83,14 +103,19 @@ export async function GET() {
           slug: story.slug,
           title: story.title,
           playableInLanguages: supportedLanguages.length,
+          sessions: story.sessions,
+          requests: story.requests,
+          tokens: story.tokens,
+          costs: `$${story.costs.toFixed(4)}`,
         })),
       },
 
       // Performance metrics
       performance: {
-        schemaVersion: 'simplified',
+        schemaVersion: 'analytics-enabled',
         storageMethod: 'single-entry-per-story',
         multilingualMethod: 'ai-translation',
+        analyticsMethod: 'real-time-tracking',
         databaseComplexity: 'low',
       },
     })
@@ -108,6 +133,7 @@ export async function GET() {
           database: 'error',
           ai: 'unknown',
           translation: 'unavailable',
+          analytics: 'unavailable',
         },
       },
       { status: 500 }

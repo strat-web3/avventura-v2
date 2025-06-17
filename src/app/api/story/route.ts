@@ -1,3 +1,5 @@
+// src/app/api/story/route.ts - Updated with analytics tracking
+
 import { NextRequest, NextResponse } from 'next/server'
 import { StoryService } from '@/lib/database'
 
@@ -22,8 +24,15 @@ interface Message {
   content: string
 }
 
+interface ClaudeApiResponse {
+  content: Array<{ text: string }>
+  usage?: {
+    input_tokens: number
+    output_tokens: number
+  }
+}
+
 // Map frontend language names to full language names for Claude
-// ✅ FIXED: Now matches what frontend sends
 const LANGUAGE_MAPPING: Record<string, string> = {
   English: 'English',
   Chinese: '中文 (Chinese)',
@@ -69,7 +78,9 @@ function parseStoryResponse(response: string): { currentStep: StoryStep; nextSte
   }
 }
 
-async function callClaude(messages: Message[]): Promise<string> {
+async function callClaude(
+  messages: Message[]
+): Promise<{ response: string; usage: { input_tokens: number; output_tokens: number } }> {
   const anthropicApiKey = process.env.ANTHROPIC_API_KEY
 
   if (!anthropicApiKey) {
@@ -99,15 +110,22 @@ async function callClaude(messages: Message[]): Promise<string> {
     throw new Error(`Claude API error: ${response.status}`)
   }
 
-  const data = await response.json()
+  const data: ClaudeApiResponse = await response.json()
   const claudeResponse = data.content[0].text
 
   console.log('📥 Claude response received:', claudeResponse.length, 'characters')
-  return claudeResponse
+
+  // Extract usage data for analytics
+  const usage = data.usage || { input_tokens: 0, output_tokens: 0 }
+  console.log('📊 Token usage:', usage)
+
+  return {
+    response: claudeResponse,
+    usage,
+  }
 }
 
 function createInitialSystemMessage(storyContent: string, language: string): string {
-  // ✅ FIXED: Now correctly looks up the full language instruction
   const languageName = LANGUAGE_MAPPING[language] || 'Français (French)'
 
   return `# INSTRUCTIONS FOR THE MULTILINGUAL ADVENTURE
@@ -160,6 +178,10 @@ Now please start this adventure story from the beginning in ${languageName}.`
 }
 
 export async function POST(request: NextRequest) {
+  const requestStartTime = Date.now()
+  let storySlug: string | null = null
+  let isNewSession = false
+
   try {
     const body: StoryRequest = await request.json()
     const {
@@ -170,6 +192,8 @@ export async function POST(request: NextRequest) {
       forceRestart = false,
       conversationHistory = [],
     } = body
+
+    storySlug = storyName
 
     console.log('🌍 Story API Request:', {
       sessionId,
@@ -195,6 +219,7 @@ export async function POST(request: NextRequest) {
     // Handle new conversation or force restart
     if (conversationHistory.length === 0 || forceRestart) {
       console.log(`🆕 Starting new conversation for: ${storyName} in ${language}`)
+      isNewSession = true
 
       try {
         // Fetch story from database (no language parameter needed)
@@ -212,6 +237,10 @@ export async function POST(request: NextRequest) {
 
         console.log(`📖 Loaded story from database: ${story.title}`)
         console.log(`🌍 Will be played in: ${LANGUAGE_MAPPING[language] || language}`)
+
+        // Increment session count for new sessions
+        await StoryService.incrementSessions(storyName)
+        console.log(`📊 Incremented session count for: ${storyName}`)
 
         const initialMessage = createInitialSystemMessage(story.content, language)
 
@@ -279,9 +308,31 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Call Claude API
+    // Call Claude API with analytics tracking
     console.log(`📊 Calling Claude with ${history.length} messages`)
-    const claudeResponse = await callClaude(history)
+    const { response: claudeResponse, usage } = await callClaude(history)
+
+    // Calculate cost for this request
+    const model = process.env.NEXT_PUBLIC_MODEL || 'claude-3-5-haiku-20241022'
+    const requestCost = StoryService.calculateClaudeCost(
+      usage.input_tokens,
+      usage.output_tokens,
+      model
+    )
+    const totalTokens = usage.input_tokens + usage.output_tokens
+
+    // Update analytics in database
+    if (storySlug) {
+      try {
+        await StoryService.incrementRequests(storySlug, totalTokens, requestCost)
+        console.log(
+          `📊 Analytics updated for ${storySlug}: ${totalTokens} tokens, $${requestCost.toFixed(4)}`
+        )
+      } catch (analyticsError) {
+        console.error('⚠️ Failed to update analytics:', analyticsError)
+        // Don't fail the request if analytics update fails
+      }
+    }
 
     // Handle response history for different request types
     let responseHistory: Message[]
@@ -309,7 +360,27 @@ export async function POST(request: NextRequest) {
         ]
 
         console.log(`🔄 Retrying with full history (${fullHistory.length} messages)`)
-        const retryResponse = await callClaude(fullHistory)
+        const { response: retryResponse, usage: retryUsage } = await callClaude(fullHistory)
+
+        // Calculate retry analytics
+        const retryTokens = retryUsage.input_tokens + retryUsage.output_tokens
+        const retryCost = StoryService.calculateClaudeCost(
+          retryUsage.input_tokens,
+          retryUsage.output_tokens,
+          model
+        )
+
+        // Update analytics for retry as well
+        if (storySlug) {
+          try {
+            await StoryService.incrementRequests(storySlug, retryTokens, retryCost)
+            console.log(
+              `📊 Retry analytics updated for ${storySlug}: ${retryTokens} tokens, ${retryCost.toFixed(4)}`
+            )
+          } catch (analyticsError) {
+            console.error('⚠️ Failed to update retry analytics:', analyticsError)
+          }
+        }
 
         // Update response history for return
         responseHistory = [
@@ -335,6 +406,12 @@ export async function POST(request: NextRequest) {
           nextSteps: parsedResponse.nextSteps,
           conversationHistory: responseHistory,
           success: true,
+          analytics: {
+            requestTime: Date.now() - requestStartTime,
+            tokensUsed: retryTokens,
+            cost: retryCost,
+            model,
+          },
         }
 
         console.log('✅ Multilingual API response ready (with fallback)')
@@ -373,9 +450,16 @@ export async function POST(request: NextRequest) {
       nextSteps: parsedResponse.nextSteps,
       conversationHistory: responseHistory,
       success: true,
+      analytics: {
+        requestTime: Date.now() - requestStartTime,
+        tokensUsed: totalTokens,
+        cost: requestCost,
+        model,
+        newSession: isNewSession,
+      },
     }
 
-    console.log('✅ API response ready')
+    console.log('✅ API response ready with analytics')
     return NextResponse.json(result)
   } catch (error) {
     console.error('❌ Error in story processing:', error)
@@ -397,12 +481,20 @@ export async function GET() {
     const stats = await StoryService.getStoryStats()
 
     return NextResponse.json({
-      status: 'healthy - multilingual ready',
+      status: 'healthy - multilingual ready with analytics',
       timestamp: new Date().toISOString(),
       database: isDbHealthy ? 'connected' : 'disconnected',
       stories: stats,
       languages: Object.keys(LANGUAGE_MAPPING).length,
       supportedLanguages: Object.keys(LANGUAGE_MAPPING),
+      analytics: {
+        totalSessions: stats.totalSessions,
+        totalRequests: stats.totalRequests,
+        totalTokens: stats.totalTokens,
+        totalCosts: `${stats.totalCosts.toFixed(4)}`,
+        averageSessionsPerStory: stats.averageSessionsPerStory.toFixed(2),
+        averageRequestsPerStory: stats.averageRequestsPerStory.toFixed(2),
+      },
     })
   } catch (error) {
     return NextResponse.json(
