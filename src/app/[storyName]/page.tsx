@@ -120,8 +120,6 @@ const OptionButton = styled(Button)`
   padding: 10px 14px;
   font-size: 16px;
   background: transparent;
-  color: white;
-  border: 2px solid #45a2f8;
   border-radius: 10px;
   transition: all 0.3s ease;
   white-space: normal;
@@ -134,6 +132,16 @@ const OptionButton = styled(Button)`
   justify-content: flex-start;
   text-align: left;
 
+  /* DISABLED STATE (during loading/typing) - Blue text + white border */
+  color: #45a2f8; /* Blue text */
+  border: 2px solid white; /* White border */
+
+  /* ENABLED STATE (when clickable) - White text + blue border */
+  &:not(:disabled) {
+    color: white; /* White text */
+    border-color: #45a2f8; /* Blue border */
+  }
+
   &:hover:not(:disabled) {
     background: rgba(140, 28, 132, 0.1);
     border-color: #8c1c84;
@@ -142,8 +150,6 @@ const OptionButton = styled(Button)`
   &:disabled {
     opacity: 1;
     cursor: not-allowed;
-    color: #45a2f8;
-    border-color: white;
   }
 
   & > * {
@@ -527,7 +533,10 @@ export default function StoryPage() {
   }
 
   const handleChoice = async (choiceNumber: number) => {
-    if (state.isLoading || state.isPreloading || state.isTyping) return
+    if (state.isLoading || state.isTyping) return
+
+    // **ALWAYS set loading state first - regardless of preloaded data**
+    setState(prev => ({ ...prev, isLoading: true }))
 
     // Check if we have preloaded data for this choice
     const preloadedStep = state.preloadedSteps[choiceNumber]
@@ -558,6 +567,7 @@ export default function StoryPage() {
         conversationHistory: newHistory,
         preloadedSteps: {}, // Clear preloaded steps
         showShimmer: false,
+        isLoading: false, // **Turn off loading after setting new step**
         isTyping: true,
       }))
 
@@ -590,7 +600,7 @@ export default function StoryPage() {
     }
 
     // Fallback to API call if no preloaded data
-    setState(prev => ({ ...prev, isLoading: true }))
+    // Loading state already set above
 
     try {
       // **UPDATED: Use the main story API route for analytics tracking**
@@ -676,7 +686,7 @@ export default function StoryPage() {
     )
   }
 
-  const isChoiceDisabled = state.isLoading || state.isPreloading || state.isTyping
+  const isChoiceDisabled = state.isLoading || state.isTyping
 
   return (
     <>
